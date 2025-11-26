@@ -3,23 +3,27 @@
 import { useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { useToast } from "@/context/ToastContext";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
+    const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-    const { showToast } = useToast();
 
     const handleReset = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError("");
+        setMessage("");
         setLoading(true);
 
         try {
             await sendPasswordResetEmail(auth, email);
-            showToast("Password reset link sent to your email", "success");
-        } catch (error: any) {
-            showToast(error.message || "Failed to send reset email", "error");
+            setMessage("Password reset link sent! Check your email.");
+        } catch (err: any) {
+            setError(err.message || "Failed to send reset email.");
         } finally {
             setLoading(false);
         }
@@ -27,39 +31,43 @@ export default function ForgotPasswordPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-            <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full space-y-6">
-                <h2 className="text-2xl font-bold text-gray-900 text-center">Reset Password</h2>
-                <p className="text-center text-gray-600">
-                    Enter your email and we’ll send you a reset link.
+            <div className="max-w-md w-full space-y-6 bg-white p-8 rounded-xl shadow-lg">
+                <h2 className="text-2xl font-bold text-center text-gray-900">
+                    Reset Password
+                </h2>
+
+                <p className="text-sm text-center text-gray-600">
+                    Enter your email and we'll send you a reset link
                 </p>
 
                 <form onSubmit={handleReset} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Email</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            placeholder="Enter your email"
-                            className="w-full p-3 border rounded-lg mt-1"
-                        />
-                    </div>
+                    <Input
+                        label="Email address"
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Enter your email"
+                    />
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-teal-600 text-white py-3 rounded-lg font-medium hover:bg-teal-700 transition disabled:opacity-50"
-                    >
-                        {loading ? "Sending..." : "Send Reset Link"}
-                    </button>
+                    {message && (
+                        <p className="text-green-600 text-sm text-center">{message}</p>
+                    )}
+                    {error && (
+                        <p className="text-red-600 text-sm text-center">{error}</p>
+                    )}
+
+                    <Button className="w-full" isLoading={loading} type="submit">
+                        Send Reset Link
+                    </Button>
                 </form>
 
-                <div className="text-center text-sm">
-                    <Link href="/login" className="text-teal-600 hover:underline">
-                        Back to Login
+                <p className="text-sm text-center text-gray-600">
+                    Back to{" "}
+                    <Link href="/login" className="text-teal-600 hover:text-teal-500 font-medium">
+                        Login
                     </Link>
-                </div>
+                </p>
             </div>
         </div>
     );
