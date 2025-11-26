@@ -25,19 +25,17 @@ export function Sidebar({ mobile = false }: { mobile?: boolean }) {
     return (
         <div
             className={clsx(
-                mobile
-                    ? "w-64 flex flex-col h-full bg-white border-r border-gray-200"
-                    : "hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-gray-200"
+                "flex flex-col bg-white border-r border-gray-200 h-full w-64",
+                mobile ? "block" : "hidden md:flex md:fixed md:inset-y-0"
             )}
         >
             <div className="flex items-center h-16 px-4 bg-teal-600">
                 <h1 className="text-xl font-bold text-white">SplitEase</h1>
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
+            <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
                 {navigation.map((item) => {
                     const isActive = pathname === item.href;
-
                     return (
                         <Link
                             key={item.name}
@@ -51,7 +49,7 @@ export function Sidebar({ mobile = false }: { mobile?: boolean }) {
                         >
                             <item.icon
                                 className={clsx(
-                                    isActive ? "text-teal-500" : "text-gray-400 group-hover:text-gray-500",
+                                    isActive ? "text-teal-500" : "text-gray-400",
                                     "mr-3 h-6 w-6"
                                 )}
                             />
