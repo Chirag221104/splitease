@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
@@ -39,3 +40,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 # splitease
 this website will resolve your after trip miscalculations and improve your trust
 >>>>>>> 0526b447217fabc1630ff3ed8959d3521440dc81
+=======
+# splitease
+this website will resolve your after trip miscalculations and improve your trust
+>>>>>>> e67bf39ebd224561e75885624de449d6f4c04c12
