@@ -100,7 +100,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             Invite Member
                         </Button>
                         <Link href={`/groups/${id}/expenses/new`}>
-                            <Button className="flex items-center gap-2">
+                            <Button className="flex items-center gap-2 whitespace-nowrap">
                                 <HiPlus className="w-5 h-5" />
                                 Add Expense
                             </Button>
