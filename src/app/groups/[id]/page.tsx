@@ -74,6 +74,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     };
 
     if (loading) return <div className="p-4">Loading group details...</div>;
+    if (!user) return <div className="p-4">You must be logged in.</div>;
     if (!group) return <div className="p-4">Group not found</div>;
 
     return (
