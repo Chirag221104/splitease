@@ -15,6 +15,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+
     const router = useRouter();
     const { signInWithGoogle } = useAuth();
 
@@ -64,23 +65,26 @@ export default function LoginPage() {
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="Enter your email"
                         />
-                        <Input
-                            label="Password"
-                            type="password"
-                            required
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Enter your password"
-                        />
 
-                        {/* 👉 Added Forgot Password Link Here */}
-                        <div className="text-right -mt-2">
-                            <Link
-                                href="/reset-password"
-                                className="text-sm text-teal-600 hover:text-teal-700 font-medium"
-                            >
-                                Forgot password?
-                            </Link>
+                        <div>
+                            <Input
+                                label="Password"
+                                type="password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Enter your password"
+                            />
+
+                            {/* ➤ Forgot Password Link */}
+                            <div className="text-right mt-1">
+                                <Link
+                                    href="/forgot-password"
+                                    className="text-sm text-teal-600 hover:text-teal-500"
+                                >
+                                    Forgot password?
+                                </Link>
+                            </div>
                         </div>
                     </div>
 
@@ -96,6 +100,7 @@ export default function LoginPage() {
                         Sign in
                     </Button>
 
+                    {/* Divider */}
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-gray-300" />
@@ -119,7 +124,10 @@ export default function LoginPage() {
                 <div className="text-center text-sm">
                     <p className="text-gray-600">
                         Don't have an account?{" "}
-                        <Link href="/register" className="font-medium text-teal-600 hover:text-teal-500">
+                        <Link
+                            href="/register"
+                            className="font-medium text-teal-600 hover:text-teal-500"
+                        >
                             Sign up
                         </Link>
                     </p>
