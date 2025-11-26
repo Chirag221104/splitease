@@ -74,6 +74,7 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
                             expense.splits.forEach(split => {
                                 if (split.userId !== pId) {
                                     if (!memberBalances[split.userId]) memberBalances[split.userId] = {};
+                                    if (!user) return <div className="p-4">You must be logged in.</div>;
                                     if (!memberBalances[split.userId][pId]) memberBalances[split.userId][pId] = 0;
                                     memberBalances[split.userId][pId] += split.amount;
                                 }
