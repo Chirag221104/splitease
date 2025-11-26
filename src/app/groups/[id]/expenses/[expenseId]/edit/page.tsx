@@ -41,7 +41,7 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 // Load expense data
                 setDescription(expense.description);
                 setAmount(expense.amount.toString());
-                setPaidBy(expense.paidBy);
+                setPaidBy(expense.paidBy || "");
                 setSplitType(expense.splitType);
                 setSelectedParticipants(new Set(expense.splits.map(s => s.userId)));
 
