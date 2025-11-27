@@ -4,12 +4,13 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getExpense, updateExpense, getGroupDetails, getUsersByIds, createActivity } from "@/lib/firestore";
+import { getExpense, updateExpense, getGroupDetails, getUsersByIds, createActivity, deleteExpense } from "@/lib/firestore";
 import { getDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { User, SplitType, Split } from "@/types";
-import { HiArrowLeft } from "react-icons/hi";
+import { HiArrowLeft, HiTrash } from "react-icons/hi";
 
 export default function EditExpensePage({ params }: { params: Promise<{ id: string; expenseId: string }> }) {
     const { id, expenseId } = use(params);
@@ -27,6 +28,8 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -185,6 +188,21 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
         return member.uid === user?.uid ? "You" : getDisplayName(member);
     };
 
+    const handleDelete = async () => {
+        if (!user) return;
+        setDeleting(true);
+        try {
+            await deleteExpense(expenseId, user.uid);
+            showToast('Expense deleted successfully', 'success');
+            router.push(`/groups/${id}`);
+        } catch (error: any) {
+            showToast(error.message || 'Failed to delete expense', 'error');
+            setShowDeleteModal(false);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     if (loading) return <div className="p-4">Loading...</div>;
     if (error && !amount) return <div className="p-4 text-red-500">{error}</div>;
 
@@ -286,20 +304,31 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                                 <p className="text-red-500 text-sm">{error}</p>
                             )}
 
-                            <div className="flex justify-end gap-3 pt-4">
+                            <div className="flex justify-between items-center pt-4">
                                 <Button
                                     type="button"
-                                    variant="ghost"
-                                    onClick={() => router.back()}
+                                    variant="outline"
+                                    onClick={() => setShowDeleteModal(true)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
                                 >
-                                    Cancel
+                                    <HiTrash className="w-4 h-4 mr-2" />
+                                    Delete Expense
                                 </Button>
-                                <Button
-                                    type="submit"
-                                    isLoading={saving}
-                                >
-                                    Update Expense
-                                </Button>
+                                <div className="flex gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={() => router.back()}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        isLoading={saving}
+                                    >
+                                        Update Expense
+                                    </Button>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -332,6 +361,18 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                     </div>
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            <ConfirmModal
+                isOpen={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                onConfirm={handleDelete}
+                title="Delete Expense"
+                message={`Are you sure you want to delete "${description}"? This action cannot be undone and will affect all group balances.`}
+                confirmText="Delete"
+                confirmVariant="danger"
+                isLoading={deleting}
+            />
         </div>
     );
 }
