@@ -16,7 +16,7 @@ import {
     documentId
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { Group, Expense, Settlement, Invite, User, Activity } from "@/types";
+import { Group, Expense, Settlement, Invite, User, Activity, ExpenseWithGroup } from "@/types";
 
 // Groups
 export const createGroup = async (name: string, description: string, createdBy: string) => {
@@ -462,3 +462,72 @@ export const getUserActivities = async (userId: string, limit: number = 20) => {
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity));
 };
+
+// Global Expense Feed
+export const getAllExpensesForUser = async (userId: string): Promise<ExpenseWithGroup[]> => {
+    // Get user's groups first
+    const userDoc = await getDoc(doc(db, "users", userId));
+    if (!userDoc.exists()) return [];
+
+    const userData = userDoc.data();
+    const groupIds = userData.groups || [];
+
+    if (groupIds.length === 0) return [];
+
+    // Fetch expenses and group details for each group
+    const allExpenses: ExpenseWithGroup[] = [];
+
+    for (const groupId of groupIds) {
+        // Fetch expenses for this group
+        const expensesQuery = query(
+            collection(db, "expenses"),
+            where("groupId", "==", groupId)
+        );
+        const expensesSnapshot = await getDocs(expensesQuery);
+
+        // Fetch group details to get the group name
+        const groupDoc = await getDoc(doc(db, "groups", groupId));
+        const groupName = groupDoc.exists() ? groupDoc.data().name : "Unknown Group";
+
+        // Map expenses with group name
+        const expensesWithGroup = expensesSnapshot.docs.map(expenseDoc => ({
+            id: expenseDoc.id,
+            ...expenseDoc.data(),
+            groupName
+        } as ExpenseWithGroup));
+
+        allExpenses.push(...expensesWithGroup);
+    }
+
+    // Sort by createdAt descending
+    allExpenses.sort((a, b) => {
+        const aTime = typeof a.createdAt === 'number' ? a.createdAt : (a.createdAt as any)?.seconds * 1000 || 0;
+        const bTime = typeof b.createdAt === 'number' ? b.createdAt : (b.createdAt as any)?.seconds * 1000 || 0;
+        return bTime - aTime;
+    });
+
+    return allExpenses;
+};
+
+// Phone Number Management for OTP Reset
+export const getUserByPhone = async (phone: string): Promise<{ uid: string; email: string; displayName: string | null } | null> => {
+    const q = query(collection(db, "users"), where("phone", "==", phone));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) return null;
+
+    const userDoc = querySnapshot.docs[0];
+    const userData = userDoc.data();
+    return {
+        uid: userData.uid,
+        email: userData.email,
+        displayName: userData.displayName || null
+    };
+};
+
+export const updateUserPhone = async (uid: string, phone: string): Promise<void> => {
+    await updateDoc(doc(db, "users", uid), {
+        phone: phone
+    });
+};
+
