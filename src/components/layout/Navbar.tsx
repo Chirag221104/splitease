@@ -23,11 +23,6 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                     <span className="sr-only">Open sidebar</span>
                     <HiMenu className="h-6 w-6" aria-hidden="true" />
                 </button>
-
-                <Link href="/dashboard" className="flex items-center gap-1 text-teal-600 hover:text-teal-700">
-                    <HiHome className="h-5 w-5" />
-                    <span className="text-sm font-medium">Dashboard</span>
-                </Link>
             </div>
 
             <div className="flex-1 flex justify-end items-center px-4">
