@@ -171,6 +171,40 @@ export const getGroupExpenses = async (groupId: string) => {
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
 };
 
+export const deleteExpense = async (expenseId: string, userId: string) => {
+    // Get expense details first
+    const expenseDoc = await getDoc(doc(db, "expenses", expenseId));
+    if (!expenseDoc.exists()) {
+        throw new Error("Expense not found");
+    }
+
+    const expenseData = expenseDoc.data() as Expense;
+
+    // Get group details to verify ownership
+    const groupDoc = await getDoc(doc(db, "groups", expenseData.groupId));
+    if (!groupDoc.exists()) {
+        throw new Error("Group not found");
+    }
+
+    const groupData = groupDoc.data();
+    if (groupData.createdBy !== userId) {
+        throw new Error("Only the group owner can delete expenses");
+    }
+
+    // Delete the expense
+    await deleteDoc(doc(db, "expenses", expenseId));
+
+    // Log activity
+    await addDoc(collection(db, "activities"), {
+        type: "expense_deleted",
+        groupId: expenseData.groupId,
+        userId: userId,
+        amount: expenseData.amount,
+        description: `deleted "${expenseData.description}"`,
+        createdAt: serverTimestamp()
+    });
+};
+
 // Settlements
 export const recordSettlement = async (settlement: Omit<Settlement, "id">) => {
     const settlementRef = await addDoc(collection(db, "settlements"), {
