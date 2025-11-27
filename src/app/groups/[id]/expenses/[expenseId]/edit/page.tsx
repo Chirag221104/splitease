@@ -20,7 +20,7 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
 
     const [description, setDescription] = useState("");
     const [amount, setAmount] = useState("");
-    const [paidBy, setPaidBy] = useState("");
+    const [contributors, setContributors] = useState<Record<string, string>>({});
     const [splitType, setSplitType] = useState<SplitType>("EQUAL");
     const [members, setMembers] = useState<User[]>([]);
     const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
@@ -44,7 +44,19 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 // Load expense data
                 setDescription(expense.description);
                 setAmount(expense.amount.toString());
-                setPaidBy(expense.paidBy || "");
+
+                // Load contributors (new multi-contributor support or legacy paidBy)
+                if (expense.contributors) {
+                    const contributorsData: Record<string, string> = {};
+                    Object.entries(expense.contributors).forEach(([uid, amt]) => {
+                        contributorsData[uid] = amt.toString();
+                    });
+                    setContributors(contributorsData);
+                } else if (expense.paidBy) {
+                    // Legacy single payer - convert to contributors format
+                    setContributors({ [expense.paidBy]: expense.amount.toString() });
+                }
+
                 setSplitType(expense.splitType);
                 setSelectedParticipants(new Set(expense.splits.map(s => s.userId)));
 
@@ -95,6 +107,33 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
         setSelectedParticipants(newSet);
     };
 
+    const toggleContributor = (uid: string) => {
+        setContributors(prev => {
+            const newContributors = { ...prev };
+            if (newContributors[uid] !== undefined) {
+                delete newContributors[uid];
+            } else {
+                newContributors[uid] = "0";
+            }
+            return newContributors;
+        });
+    };
+
+    const updateContribution = (uid: string, value: string) => {
+        setContributors(prev => ({
+            ...prev,
+            [uid]: value
+        }));
+    };
+
+    const validateContributors = (): boolean => {
+        const total = Object.values(contributors).reduce((sum, val) => {
+            return sum + parseFloat(val || "0");
+        }, 0);
+        const targetAmount = parseFloat(amount);
+        return Math.abs(total - targetAmount) < 0.01;
+    };
+
     const calculateSplits = (): Split[] => {
         const numAmount = parseFloat(amount);
         const participants = Array.from(selectedParticipants);
@@ -142,6 +181,17 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
             return;
         }
 
+        if (Object.keys(contributors).length === 0) {
+            setError("Please select at least one contributor (who paid)");
+            return;
+        }
+
+        if (!validateContributors()) {
+            const total = Object.values(contributors).reduce((sum, val) => sum + parseFloat(val || "0"), 0);
+            setError(`Total contributions must equal ₹${parseFloat(amount).toFixed(2)}. Currently: ₹${total.toFixed(2)}`);
+            return;
+        }
+
         setSaving(true);
         setError("");
 
@@ -157,22 +207,33 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 return;
             }
 
+            // Convert contributors to numbers
+            const contributorsData: Record<string, number> = {};
+            Object.entries(contributors).forEach(([uid, amountStr]) => {
+                contributorsData[uid] = parseFloat(amountStr || "0");
+            });
+
             await updateExpense(expenseId, {
                 description,
                 amount: numAmount,
-                paidBy,
+                contributors: contributorsData,
+                paidBy: undefined, // Clear legacy paidBy field
                 splitType,
                 splits
             });
 
             // Log activity
-            const payerName = members.find(m => m.uid === paidBy)?.displayName || members.find(m => m.uid === paidBy)?.email || "Someone";
+            const contributorNames = Object.entries(contributorsData)
+                .filter(([_, amt]) => amt > 0)
+                .map(([uid]) => members.find(m => m.uid === uid)?.displayName || members.find(m => m.uid === uid)?.email || "Someone")
+                .join(", ");
+
             await createActivity({
                 type: "expense",
                 groupId: id,
                 userId: user.uid,
                 amount: numAmount,
-                description: `updated "${description}" (paid by ${payerName})`
+                description: `updated "${description}" (paid by ${contributorNames})`
             });
 
             router.push(`/groups/${id}`);
@@ -243,18 +304,41 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                             />
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Paid By</label>
-                                <select
-                                    value={paidBy}
-                                    onChange={(e) => setPaidBy(e.target.value)}
-                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                >
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Paid By (Contributors)
+                                </label>
+                                <div className="space-y-2 bg-gray-50 p-3 rounded-lg">
                                     {members.map(member => (
-                                        <option key={member.uid} value={member.uid}>
-                                            {getUserName(member)}
-                                        </option>
+                                        <div key={member.uid} className="flex items-center gap-3 p-2 bg-white rounded hover:bg-gray-50 transition">
+                                            <input
+                                                type="checkbox"
+                                                checked={contributors[member.uid] !== undefined}
+                                                onChange={() => toggleContributor(member.uid)}
+                                                className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                                            />
+                                            <span className="flex-1 text-sm text-gray-900">
+                                                {getUserName(member)}
+                                            </span>
+                                            {contributors[member.uid] !== undefined && (
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={contributors[member.uid]}
+                                                    onChange={(e) => updateContribution(member.uid, e.target.value)}
+                                                    placeholder="₹ Amount paid"
+                                                    className="w-32 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-teal-500"
+                                                />
+                                            )}
+                                        </div>
                                     ))}
-                                </select>
+                                </div>
+                                {amount && Object.keys(contributors).length > 0 && !validateContributors() && (
+                                    <p className="text-red-500 text-sm mt-2">
+                                        Total contributions must equal ₹{parseFloat(amount).toFixed(2)}.
+                                        Currently: ₹{Object.values(contributors).reduce((sum, val) => sum + parseFloat(val || "0"), 0).toFixed(2)}
+                                    </p>
+                                )}
                             </div>
 
                             <div>
