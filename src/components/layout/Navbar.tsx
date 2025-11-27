@@ -28,7 +28,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
             <div className="flex-1 flex justify-end items-center px-4">
                 <h1 className="text-lg font-semibold text-gray-900 md:hidden mr-auto ml-4">SplitEase</h1>
                 <div className="ml-4 flex items-center md:ml-6">
-                    <span className="text-sm text-gray-700 mr-4 hidden sm:block">
+                    <span className="text-sm text-gray-700 mr-4">
                         {user?.displayName || user?.email}
                     </span>
                     <Button variant="ghost" size="sm" onClick={logout}>
