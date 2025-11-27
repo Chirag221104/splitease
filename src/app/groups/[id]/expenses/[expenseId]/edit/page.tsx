@@ -217,7 +217,6 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 description,
                 amount: numAmount,
                 contributors: contributorsData,
-                paidBy: undefined, // Clear legacy paidBy field
                 splitType,
                 splits
             });
