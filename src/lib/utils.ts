@@ -33,3 +33,15 @@ export const validateUsername = (username: string): { valid: boolean; error?: st
 
     return { valid: true };
 };
+
+export const normalizeDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Date) return dateVal;
+    if (typeof dateVal === 'number') return new Date(dateVal);
+    if (typeof (dateVal as any).toDate === 'function') return (dateVal as any).toDate();
+    // Handle Firestore timestamp-like objects that aren't instances but have seconds
+    if (dateVal.seconds !== undefined) return new Date(dateVal.seconds * 1000);
+
+    const date = new Date(dateVal);
+    return isNaN(date.getTime()) ? new Date() : date;
+};

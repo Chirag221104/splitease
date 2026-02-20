@@ -101,6 +101,145 @@ export const calculateGroupBalances = (
     return balances;
 };
 
+export interface PairwiseBalance {
+    from: string;
+    to: string;
+    amount: number;
+}
+
+export const calculatePairwiseBalances = (
+    expenses: Expense[],
+    settlements: Settlement[],
+    members: string[]
+): Record<string, Record<string, number>> => {
+    // ledger[userIdA][userIdB] = how much userIdA owes userIdB
+    const ledger: Record<string, Record<string, number>> = {};
+
+    // Initialize ledger
+    members.forEach(m1 => {
+        ledger[m1] = {};
+        members.forEach(m2 => {
+            if (m1 !== m2) ledger[m1][m2] = 0;
+        });
+    });
+
+    expenses.forEach(expense => {
+        const totalAmount = expense.amount;
+        if (totalAmount <= 0) return;
+
+        // 1. Determine net contribution for each user in this expense
+        const netContributions: Record<string, number> = {};
+        members.forEach(m => netContributions[m] = 0);
+
+        if (expense.contributors) {
+            Object.entries(expense.contributors).forEach(([uid, amt]) => {
+                netContributions[uid] += amt;
+            });
+        } else if (expense.paidBy) {
+            netContributions[expense.paidBy] += totalAmount;
+        }
+
+        expense.splits.forEach(split => {
+            netContributions[split.userId] -= split.amount;
+        });
+
+        // 2. Separate into debtors and creditors for THIS expense
+        const debtors: { uid: string, amount: number }[] = [];
+        const creditors: { uid: string, amount: number }[] = [];
+        let totalCredit = 0;
+
+        Object.entries(netContributions).forEach(([uid, net]) => {
+            if (net < -0.01) debtors.push({ uid, amount: Math.abs(net) });
+            if (net > 0.01) {
+                creditors.push({ uid, amount: net });
+                totalCredit += net;
+            }
+        });
+
+        // 3. Distribute each debtor's amount among creditors proportionally
+        if (totalCredit > 0) {
+            debtors.forEach(debtor => {
+                creditors.forEach(creditor => {
+                    const contributionToThisCreditor = debtor.amount * (creditor.amount / totalCredit);
+                    ledger[debtor.uid][creditor.uid] += contributionToThisCreditor;
+                });
+            });
+        }
+    });
+
+    // Process settlements
+    settlements.forEach(settlement => {
+        // fromUser paid toUser, reducing debt
+        ledger[settlement.fromUser][settlement.toUser] -= settlement.amount;
+    });
+
+    // Net off: if A owes B 10 and B owes A 5, A owes B 5.
+    members.forEach(m1 => {
+        members.forEach(m2 => {
+            if (m1 < m2) {
+                const owes1to2 = ledger[m1][m2];
+                const owes2to1 = ledger[m2][m1];
+
+                if (owes1to2 > owes2to1) {
+                    ledger[m1][m2] = owes1to2 - owes2to1;
+                    ledger[m2][m1] = 0;
+                } else {
+                    ledger[m2][m1] = owes2to1 - owes1to2;
+                    ledger[m1][m2] = 0;
+                }
+            }
+        });
+    });
+
+    return ledger;
+};
+
+export const calculateExpenseImpact = (
+    expense: Expense,
+    members: string[]
+): Transaction[] => {
+    // This shows who owes who specifically for THIS one expense
+    const netContributions: Record<string, number> = {};
+    members.forEach(m => netContributions[m] = 0);
+
+    if (expense.contributors) {
+        Object.entries(expense.contributors).forEach(([uid, amt]) => {
+            netContributions[uid] += amt;
+        });
+    } else if (expense.paidBy) {
+        netContributions[expense.paidBy] += expense.amount;
+    }
+
+    expense.splits.forEach(split => {
+        netContributions[split.userId] -= split.amount;
+    });
+
+    const debtors: { id: string, amount: number }[] = [];
+    const creditors: { id: string, amount: number }[] = [];
+
+    Object.entries(netContributions).forEach(([uid, net]) => {
+        if (net < -0.01) debtors.push({ id: uid, amount: Math.abs(net) });
+        if (net > 0.01) creditors.push({ id: uid, amount: net });
+    });
+
+    const transactions: Transaction[] = [];
+    let i = 0; let j = 0;
+    while (i < debtors.length && j < creditors.length) {
+        const d = debtors[i];
+        const c = creditors[j];
+        const amount = Math.min(d.amount, c.amount);
+        if (amount > 0.01) {
+            transactions.push({ from: d.id, to: c.id, amount });
+        }
+        d.amount -= amount;
+        c.amount -= amount;
+        if (d.amount < 0.01) i++;
+        if (c.amount < 0.01) j++;
+    }
+
+    return transactions;
+};
+
 export const simplifyDebts = (balances: Balance): Transaction[] => {
     const debtors: { id: string, amount: number }[] = [];
     const creditors: { id: string, amount: number }[] = [];
@@ -148,6 +287,9 @@ export const simplifyDebts = (balances: Balance): Transaction[] => {
 
     return transactions;
 };
+
+// Alias for better UI naming
+export const getSuggestedSettlements = simplifyDebts;
 
 export const calculateGlobalBalances = (allGroupBalances: Record<string, number>[], currentUserId: string) => {
     const result = { owed: 0, owe: 0 };

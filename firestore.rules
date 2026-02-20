@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper: Check if user is logged in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if user is a member of a group
+    function isGroupMember(groupId) {
+      return isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members);
+    }
+
+    // 1. User Profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+      // Special: allow updating friends array for accept/remove logic
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends'])
+      );
+    }
+    
+    // 2. Groups
+    match /groups/{groupId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.members);
+      allow update: if isSignedIn() && (request.auth.uid in resource.data.members);
+      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // 3. Friends System
+    match /friendRequests/{requestId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.fromId || request.auth.uid == resource.data.toId);
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromId;
+      allow update: if isSignedIn() && (
+        (request.auth.uid == resource.data.toId && request.resource.data.status in ['accepted', 'declined']) ||
+        (request.auth.uid == resource.data.fromId && request.resource.data.status == 'cancelled')
+      );
+      allow delete: if isSignedIn() && (request.auth.uid == resource.data.fromId || request.auth.uid == resource.data.toId);
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && (
+        resource == null || 
+        request.auth.uid == resource.data.userA || 
+        request.auth.uid == resource.data.userB
+      );
+      allow create, update: if isSignedIn() && (
+        request.auth.uid == request.resource.data.userA || 
+        request.auth.uid == request.resource.data.userB
+      );
+    }
+
+    // 4. Expenses & Settlements
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn(); // Filtered by userId/groupId in queries
+      allow create: if isSignedIn(); 
+      allow update: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid || 
+        get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid
+      );
+      allow delete: if false; 
+      
+      match /versions/{versionId} {
+        allow read: if isSignedIn();
+      }
+    }
+
+    match /settlements/{settlementId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow delete: if isSignedIn() && (
+        resource.data.fromUser == request.auth.uid ||
+        get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid
+      );
+    }
+
+    // 5. Activity Log (Immutable)
+    match /activities/{activityId} {
+      allow read: if isSignedIn() && (
+        (resource.data.groupId != 'global' && (request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.members)) || 
+        resource.data.groupId == 'global' || 
+        request.auth.uid == resource.data.userId
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable audit trail
+    }
+
+    // 6. Invites
+    match /invites/{inviteId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (
+        resource.data.invitedBy == request.auth.uid ||
+        get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid
+      );
+    }
+  }
+}

@@ -1,157 +1,103 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
-import { updateUserPhone } from "@/lib/firestore";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { useRouter } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+
+import { motion } from "framer-motion";
+import { HiUser, HiMail, HiOutlineLogout, HiChevronRight } from "react-icons/hi";
 
 export default function SettingsPage() {
-    const { user, logout, refreshUser } = useAuth();
-    const { showToast } = useToast();
+    const { user, logout } = useAuth();
     const router = useRouter();
-    const [isEditingPhone, setIsEditingPhone] = useState(false);
-    const [phone, setPhone] = useState("");
-    const [currentPhone, setCurrentPhone] = useState("");
-    const [loading, setLoading] = useState(false);
-
-    useEffect(() => {
-        const fetchUserPhone = async () => {
-            if (!user) return;
-            try {
-                const userDoc = await getDoc(doc(db, "users", user.uid));
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    setCurrentPhone(userData.phone || "");
-                    setPhone(userData.phone || "");
-                }
-            } catch (error) {
-                console.error("Error fetching user phone:", error);
-            }
-        };
-
-        fetchUserPhone();
-    }, [user]);
 
     const handleLogout = async () => {
         await logout();
         router.push("/login");
     };
 
-    const handleUpdatePhone = async () => {
-        if (!user) return;
-
-        // Basic validation
-        if (phone && !phone.startsWith("+")) {
-            showToast("Phone number must be in international format (e.g., +911234567890)", "error");
-            return;
-        }
-
-        setLoading(true);
-        try {
-            await updateUserPhone(user.uid, phone);
-            await refreshUser();
-            setCurrentPhone(phone);
-            setIsEditingPhone(false);
-            showToast("Phone number updated successfully!", "success");
-        } catch (error: any) {
-            showToast(error.message || "Failed to update phone number", "error");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleCancelEdit = () => {
-        setPhone(currentPhone);
-        setIsEditingPhone(false);
-    };
+    const userInitials = user?.displayName
+        ? user.displayName.split(' ').map(n => n[0]).join('').toUpperCase()
+        : user?.email?.charAt(0).toUpperCase() || 'U';
 
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-2xl mx-auto space-y-8 pb-12"
+        >
+            <header>
+                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Settings</h1>
+                <p className="text-gray-500 mt-1">Manage your account preferences</p>
+            </header>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-6">
-                <div>
-                    <h3 className="text-lg font-medium text-gray-900">Account</h3>
-                    <div className="mt-4 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Email</label>
-                            <p className="mt-1 text-gray-900">{user?.email}</p>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Display Name</label>
-                            <p className="mt-1 text-gray-900">{user?.displayName || "Not set"}</p>
-                        </div>
+            {/* Profile Header Card */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center gap-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-teal-50 rounded-bl-full opacity-50 -mr-8 -mt-8 animate-pulse"></div>
 
-                        {/* Phone Number Section */}
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Phone Number
-                                </label>
-                                {!isEditingPhone && (
-                                    <button
-                                        onClick={() => setIsEditingPhone(true)}
-                                        className="text-sm text-teal-600 hover:text-teal-700 font-medium"
-                                    >
-                                        {currentPhone ? "Edit" : "Add"}
-                                    </button>
-                                )}
-                            </div>
+                <div className="w-24 h-24 bg-teal-600 rounded-3xl flex items-center justify-center text-3xl font-black text-white shadow-xl shadow-teal-100 shrink-0 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                    {userInitials}
+                </div>
 
-                            {isEditingPhone ? (
-                                <div className="space-y-3">
-                                    <Input
-                                        type="tel"
-                                        value={phone}
-                                        onChange={(e) => setPhone(e.target.value)}
-                                        placeholder="+911234567890"
-                                    />
-                                    <p className="text-xs text-gray-500">
-                                        Use international format with country code (e.g., +91 for India)
-                                    </p>
-                                    <div className="flex gap-2">
-                                        <Button
-                                            onClick={handleUpdatePhone}
-                                            isLoading={loading}
-                                            size="sm"
-                                        >
-                                            Save
-                                        </Button>
-                                        <Button
-                                            onClick={handleCancelEdit}
-                                            variant="outline"
-                                            size="sm"
-                                        >
-                                            Cancel
-                                        </Button>
-                                    </div>
+                <div className="text-center sm:text-left z-10">
+                    <h2 className="text-2xl font-black text-gray-900">{user?.displayName || "New User"}</h2>
+                    <p className="text-gray-500 flex items-center justify-center sm:justify-start gap-1 mt-1">
+                        <HiMail className="w-4 h-4" />
+                        {user?.email}
+                    </p>
+                    <div className="mt-4 inline-flex items-center px-3 py-1 bg-teal-50 text-teal-700 text-xs font-bold rounded-full border border-teal-100">
+                        Pro Account
+                    </div>
+                </div>
+            </div>
+
+            {/* Settings Sections */}
+            <div className="space-y-4">
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+                    <div className="p-6 hover:bg-gray-50/50 transition-colors cursor-pointer group">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform">
+                                    <HiUser className="w-5 h-5" />
                                 </div>
-                            ) : (
-                                <p className="mt-1 text-gray-900">
-                                    {currentPhone || "Not set"}
-                                </p>
-                            )}
+                                <div>
+                                    <p className="font-bold text-gray-900 italic">Personal Info</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Edit your name and avatar</p>
+                                </div>
+                            </div>
+                            <HiChevronRight className="w-5 h-5 text-gray-300 group-hover:text-teal-600 transition-colors" />
+                        </div>
+                    </div>
 
-                            {currentPhone && !isEditingPhone && (
-                                <p className="mt-2 text-xs text-gray-500">
-                                    You can use this phone number for OTP-based password reset
-                                </p>
-                            )}
+                    <div className="p-6 hover:bg-gray-50/50 transition-colors cursor-pointer group">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-amber-50 text-amber-600 rounded-xl group-hover:scale-110 transition-transform">
+                                    <HiMail className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-gray-900 italic">Email Notifications</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Control how we message you</p>
+                                </div>
+                            </div>
+                            <HiChevronRight className="w-5 h-5 text-gray-300 group-hover:text-teal-600 transition-colors" />
                         </div>
                     </div>
                 </div>
 
-                <div className="pt-6 border-t border-gray-100">
-                    <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200">
-                        Log Out
-                    </Button>
+                <div className="pt-4 px-2">
+                    <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center justify-center gap-3 p-5 bg-rose-50 text-rose-600 rounded-2xl font-black shadow-sm shadow-rose-100/50 border border-rose-100 hover:bg-rose-600 hover:text-white transition-all duration-300 group"
+                    >
+                        <HiOutlineLogout className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                        Log Out From SplitEase
+                    </button>
+                    <p className="text-center text-[10px] text-gray-400 mt-6 font-bold tracking-widest uppercase italic">
+                        Version 1.2.0 • SplitEase Inc.
+                    </p>
                 </div>
             </div>
-        </div>
+        </motion.div>
     );
 }

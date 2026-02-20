@@ -13,10 +13,12 @@ import {
     arrayRemove,
     orderBy,
     onSnapshot,
-    documentId
+    documentId,
+    runTransaction
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { Group, Expense, Settlement, Invite, User, Activity, ExpenseWithGroup } from "@/types";
+import { User, Group, Expense, Settlement, Transaction, Invite, Activity, ExpenseWithGroup } from "@/types";
+import { logActivity, ActivityTypes } from "./activityService";
 
 // Groups
 export const createGroup = async (name: string, description: string, createdBy: string) => {
@@ -46,9 +48,14 @@ export const createGroup = async (name: string, description: string, createdBy: 
 };
 
 export const getUserGroups = async (userId: string) => {
-    const q = query(collection(db, "groups"), where("members", "array-contains", userId));
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+    try {
+        const q = query(collection(db, "groups"), where("members", "array-contains", userId));
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+    } catch (error) {
+        console.error("Error in getUserGroups for userId:", userId, error);
+        throw error;
+    }
 };
 
 export const getGroupDetails = async (groupId: string) => {
@@ -112,21 +119,22 @@ export const deleteGroup = async (groupId: string, userId: string) => {
 export const addExpense = async (expense: Omit<Expense, "id" | "createdAt">) => {
     const expenseRef = await addDoc(collection(db, "expenses"), {
         ...expense,
+        currentVersion: 1,
+        isDeleted: false,
         createdAt: serverTimestamp()
     });
 
-    // Log activity - handle both contributors and legacy paidBy
     const userId = expense.contributors
-        ? Object.keys(expense.contributors)[0] // Use first contributor for activity
+        ? Object.keys(expense.contributors)[0]
         : expense.paidBy || expense.createdBy;
 
-    await addDoc(collection(db, "activities"), {
-        type: "expense",
+    await logActivity({
+        type: ActivityTypes.EXPENSE_CREATED,
         groupId: expense.groupId,
         userId: userId,
         amount: expense.amount,
         description: `added "${expense.description}"`,
-        createdAt: serverTimestamp()
+        metadata: { expenseId: expenseRef.id }
     });
 
     return expenseRef.id;
@@ -141,67 +149,93 @@ export const getExpense = async (expenseId: string) => {
     return null;
 };
 
-export const updateExpense = async (expenseId: string, expense: Partial<Omit<Expense, "id" | "createdAt">>) => {
-    const docRef = doc(db, "expenses", expenseId);
-    await updateDoc(docRef, expense);
+export const updateExpense = async (expenseId: string, expense: Partial<Omit<Expense, "id" | "createdAt">>, updatedBy: string) => {
+    return await runTransaction(db, async (transaction) => {
+        const docRef = doc(db, "expenses", expenseId);
+        const snap = await transaction.get(docRef);
+        if (!snap.exists()) throw new Error("Expense not found");
 
-    // Fetch the updated expense to get details for activity log
-    const updatedDoc = await getDoc(docRef);
-    if (updatedDoc.exists()) {
-        const data = updatedDoc.data() as Expense;
-        // Log activity
-        await addDoc(collection(db, "activities"), {
-            type: "expense",
-            groupId: data.groupId,
-            userId: data.paidBy, // Or the user who updated it if we tracked that
-            amount: data.amount,
-            description: `updated "${data.description}"`,
-            createdAt: serverTimestamp()
+        const oldData = snap.data() as Expense;
+        const newVersion = (oldData.currentVersion || 1) + 1;
+
+        // 1. Store snapshot of current data as a version
+        const historyRef = doc(collection(docRef, "versions"));
+        transaction.set(historyRef, {
+            expenseId,
+            version: oldData.currentVersion || 1,
+            snapshot: { ...oldData },
+            updatedBy,
+            updatedAt: serverTimestamp()
         });
-    }
+
+        // 2. Update the main document
+        transaction.update(docRef, {
+            ...expense,
+            currentVersion: newVersion,
+            updatedAt: serverTimestamp()
+        });
+
+        // 3. Log Activity
+        await logActivity({
+            type: ActivityTypes.EXPENSE_EDITED,
+            groupId: oldData.groupId,
+            userId: updatedBy,
+            amount: expense.amount || oldData.amount,
+            description: `updated "${expense.description || oldData.description}"`,
+            metadata: {
+                expenseId,
+                version: newVersion
+            }
+        });
+    });
 };
 
 export const getGroupExpenses = async (groupId: string) => {
-    const q = query(
-        collection(db, "expenses"),
-        where("groupId", "==", groupId),
-        orderBy("createdAt", "desc")
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
+    try {
+        const q = query(
+            collection(db, "expenses"),
+            where("groupId", "==", groupId),
+            orderBy("createdAt", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Expense))
+            .filter(e => e.isDeleted !== true);
+    } catch (error) {
+        console.error("Error in getGroupExpenses for groupId:", groupId, error);
+        throw error;
+    }
 };
 
 export const deleteExpense = async (expenseId: string, userId: string) => {
-    // Get expense details first
-    const expenseDoc = await getDoc(doc(db, "expenses", expenseId));
-    if (!expenseDoc.exists()) {
-        throw new Error("Expense not found");
+    const docRef = doc(db, "expenses", expenseId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) throw new Error("Expense not found");
+    const data = snap.data() as Expense;
+
+    const groupDoc = await getDoc(doc(db, "groups", data.groupId));
+    const groupData = groupDoc.exists() ? groupDoc.data() : null;
+
+    // Check if user is the creator or the group admin
+    const isCreator = data.createdBy === userId;
+    const isGroupAdmin = groupData?.createdBy === userId;
+
+    if (!isCreator && !isGroupAdmin) {
+        throw new Error("Only the expense creator or group admin can delete this expense");
     }
 
-    const expenseData = expenseDoc.data() as Expense;
+    await updateDoc(docRef, {
+        isDeleted: true,
+        updatedAt: serverTimestamp()
+    });
 
-    // Get group details to verify ownership
-    const groupDoc = await getDoc(doc(db, "groups", expenseData.groupId));
-    if (!groupDoc.exists()) {
-        throw new Error("Group not found");
-    }
-
-    const groupData = groupDoc.data();
-    if (groupData.createdBy !== userId) {
-        throw new Error("Only the group owner can delete expenses");
-    }
-
-    // Delete the expense
-    await deleteDoc(doc(db, "expenses", expenseId));
-
-    // Log activity
-    await addDoc(collection(db, "activities"), {
-        type: "expense_deleted",
-        groupId: expenseData.groupId,
+    await logActivity({
+        type: ActivityTypes.EXPENSE_DELETED,
+        groupId: data.groupId,
         userId: userId,
-        amount: expenseData.amount,
-        description: `deleted "${expenseData.description}"`,
-        createdAt: serverTimestamp()
+        amount: data.amount,
+        description: `deleted "${data.description}"`,
+        metadata: { expenseId }
     });
 };
 
@@ -227,52 +261,62 @@ export const recordSettlement = async (settlement: Omit<Settlement, "id">) => {
 };
 
 export const getGroupSettlements = async (groupId: string) => {
-    const q = query(
-        collection(db, "settlements"),
-        where("groupId", "==", groupId),
-        orderBy("date", "desc")
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Settlement));
+    try {
+        const q = query(
+            collection(db, "settlements"),
+            where("groupId", "==", groupId),
+            orderBy("date", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Settlement));
+    } catch (error) {
+        console.error("Error in getGroupSettlements for groupId:", groupId, error);
+        throw error;
+    }
 };
 
 export const getUserActivity = async (userId: string) => {
-    // Get user's groups first
-    const userGroups = await getUserGroups(userId);
-    const groupIds = userGroups.map(g => g.id);
+    try {
+        // Get user's groups first
+        const userGroups = await getUserGroups(userId);
+        const groupIds = userGroups.map(g => g.id);
 
-    if (groupIds.length === 0) return [];
+        if (groupIds.length === 0) return [];
 
-    // Fetch recent activities from these groups
-    const q = query(
-        collection(db, "activities"),
-        where("groupId", "in", groupIds.slice(0, 10)),
-        orderBy("createdAt", "desc")
-        // limit(10) // Limit not supported with 'in' query in some client SDK versions without composite index, but usually fine.
-    );
+        // Fetch recent activities from these groups
+        const q = query(
+            collection(db, "activities"),
+            where("groupId", "in", groupIds.slice(0, 10)),
+            orderBy("createdAt", "desc")
+        );
 
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity));
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity));
+    } catch (error) {
+        console.error("Error in getUserActivity for userId:", userId, error);
+        throw error;
+    }
 };
 
 // Users
 export const getUsersByIds = async (uids: string[]) => {
-    if (uids.length === 0) return [];
-    // Firestore 'in' query is limited to 10 items.
-    // We'll chunk the requests if needed, but for now assuming < 10 for simplicity or just fetch individually if > 10.
-    // A better approach for many users is to fetch them all or use a different strategy.
-    // For this demo, we will just fetch them all using documentId().
+    const validUids = uids.filter(uid => uid && typeof uid === 'string' && uid.trim() !== "");
+    if (validUids.length === 0) return [];
 
     const chunks = [];
-    for (let i = 0; i < uids.length; i += 10) {
-        chunks.push(uids.slice(i, i + 10));
+    for (let i = 0; i < validUids.length; i += 10) {
+        chunks.push(validUids.slice(i, i + 10));
     }
 
     const users = [];
     for (const chunk of chunks) {
-        const q = query(collection(db, "users"), where(documentId(), "in", chunk));
-        const snapshot = await getDocs(q);
-        users.push(...snapshot.docs.map(doc => doc.data() as User));
+        try {
+            const q = query(collection(db, "users"), where(documentId(), "in", chunk));
+            const snapshot = await getDocs(q);
+            users.push(...snapshot.docs.map(doc => doc.data() as User));
+        } catch (error) {
+            console.error("Error in getUsersByIds chunk:", chunk, error);
+        }
     }
     return users;
 };
@@ -315,6 +359,40 @@ export const getUserByUsername = async (username: string): Promise<{ uid: string
         email: userData.email,
         displayName: userData.displayName || null
     };
+};
+
+// Users - Search
+export const searchUsers = async (searchTerm: string): Promise<User[]> => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+
+    searchTerm = searchTerm.toLowerCase();
+
+    // We try to search by username first
+    const usernameQ = query(
+        collection(db, "users"),
+        where("username", ">=", searchTerm),
+        where("username", "<=", searchTerm + "\uf8ff")
+    );
+
+    const emailQ = query(
+        collection(db, "users"),
+        where("email", "==", searchTerm)
+    );
+
+    const [uSnap, eSnap] = await Promise.all([getDocs(usernameQ), getDocs(emailQ)]);
+
+    const results: User[] = [];
+    const seenUids = new Set<string>();
+
+    [...uSnap.docs, ...eSnap.docs].forEach(doc => {
+        const data = doc.data() as User;
+        if (!seenUids.has(data.uid)) {
+            results.push(data);
+            seenUids.add(data.uid);
+        }
+    });
+
+    return results;
 };
 
 // Users - Validation
@@ -523,12 +601,14 @@ export const getAllExpensesForUser = async (userId: string): Promise<ExpenseWith
         const groupDoc = await getDoc(doc(db, "groups", groupId));
         const groupName = groupDoc.exists() ? groupDoc.data().name : "Unknown Group";
 
-        // Map expenses with group name
-        const expensesWithGroup = expensesSnapshot.docs.map(expenseDoc => ({
-            id: expenseDoc.id,
-            ...expenseDoc.data(),
-            groupName
-        } as ExpenseWithGroup));
+        // Map expenses with group name, filtering out deleted ones in memory
+        const expensesWithGroup = expensesSnapshot.docs
+            .map(expenseDoc => ({
+                id: expenseDoc.id,
+                ...expenseDoc.data(),
+                groupName
+            } as ExpenseWithGroup))
+            .filter(e => e.isDeleted !== true);
 
         allExpenses.push(...expensesWithGroup);
     }
@@ -541,27 +621,5 @@ export const getAllExpensesForUser = async (userId: string): Promise<ExpenseWith
     });
 
     return allExpenses;
-};
-
-// Phone Number Management for OTP Reset
-export const getUserByPhone = async (phone: string): Promise<{ uid: string; email: string; displayName: string | null } | null> => {
-    const q = query(collection(db, "users"), where("phone", "==", phone));
-    const querySnapshot = await getDocs(q);
-
-    if (querySnapshot.empty) return null;
-
-    const userDoc = querySnapshot.docs[0];
-    const userData = userDoc.data();
-    return {
-        uid: userData.uid,
-        email: userData.email,
-        displayName: userData.displayName || null
-    };
-};
-
-export const updateUserPhone = async (uid: string, phone: string): Promise<void> => {
-    await updateDoc(doc(db, "users", uid), {
-        phone: phone
-    });
 };
 

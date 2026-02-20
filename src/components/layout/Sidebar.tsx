@@ -14,6 +14,7 @@ import {
 const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: HiHome },
     { name: "Groups", href: "/groups", icon: HiUserGroup },
+    { name: "Friends", href: "/friends", icon: HiUserGroup }, // Reusing HiUserGroup or similar
     { name: "Expenses", href: "/expenses", icon: HiCurrencyDollar },
     { name: "Activity", href: "/activity", icon: HiClock },
     { name: "Settings", href: "/settings", icon: HiCog },

@@ -23,7 +23,14 @@ export default function ForgotPasswordPage() {
             await sendPasswordResetEmail(auth, email);
             setMessage("Password reset email sent! Check your inbox — and your spam folder if you don't see it.");
         } catch (err: any) {
-            setError(err.message || "Failed to send reset email.");
+            console.error("Password reset error:", err);
+            if (err.code === 'auth/user-not-found') {
+                setError("No user found with this email address.");
+            } else if (err.code === 'auth/invalid-email') {
+                setError("Please enter a valid email address.");
+            } else {
+                setError("Failed to send reset email. Please try again later.");
+            }
         } finally {
             setLoading(false);
         }
@@ -66,21 +73,6 @@ export default function ForgotPasswordPage() {
                     Back to{" "}
                     <Link href="/login" className="text-teal-600 hover:text-teal-500 font-medium">
                         Login
-                    </Link>
-                </p>
-
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200" />
-                    </div>
-                    <div className="relative flex justify-center text-xs">
-                        <span className="px-2 bg-white text-gray-500">Or</span>
-                    </div>
-                </div>
-
-                <p className="text-sm text-center text-gray-600">
-                    <Link href="/reset/phone" className="text-teal-600 hover:text-teal-500 font-medium">
-                        Reset with phone number
                     </Link>
                 </p>
             </div>

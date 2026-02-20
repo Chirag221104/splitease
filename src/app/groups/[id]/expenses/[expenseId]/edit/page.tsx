@@ -4,7 +4,7 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getExpense, updateExpense, getGroupDetails, getUsersByIds, createActivity, deleteExpense } from "@/lib/firestore";
+import { getExpense, updateExpense, getGroupDetails, getUsersByIds, deleteExpense } from "@/lib/firestore";
 import { getDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -219,21 +219,8 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 contributors: contributorsData,
                 splitType,
                 splits
-            });
+            }, user.uid);
 
-            // Log activity
-            const contributorNames = Object.entries(contributorsData)
-                .filter(([_, amt]) => amt > 0)
-                .map(([uid]) => members.find(m => m.uid === uid)?.displayName || members.find(m => m.uid === uid)?.email || "Someone")
-                .join(", ");
-
-            await createActivity({
-                type: "expense",
-                groupId: id,
-                userId: user.uid,
-                amount: numAmount,
-                description: `updated "${description}" (paid by ${contributorNames})`
-            });
 
             router.push(`/groups/${id}`);
         } catch (err: any) {

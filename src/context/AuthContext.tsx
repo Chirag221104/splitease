@@ -15,6 +15,7 @@ import { User } from "@/types";
 interface AuthContextType {
     user: User | null;
     loading: boolean;
+    isAuthenticating: boolean;
     signInWithGoogle: () => Promise<void>;
     logout: () => Promise<void>;
     refreshUser: () => Promise<void>;
@@ -23,6 +24,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
+    isAuthenticating: false,
     signInWithGoogle: async () => { },
     logout: async () => { },
     refreshUser: async () => { },
@@ -38,6 +40,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
      *  loading should default to TRUE until Firebase finishes initial auth check
      */
     const [loading, setLoading] = useState(true);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
 
     const fetchUserData = async (firebaseUser: FirebaseUser): Promise<User> => {
         try {
@@ -134,16 +137,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     /** FIX: Google popup breaks if triggered during redirect or loading */
     const signInWithGoogle = async () => {
-        if (loading) return; // avoid multiple clicks
+        if (loading || isAuthenticating) return; // avoid multiple clicks
 
+        setIsAuthenticating(true);
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: "select_account" });
 
         try {
             await signInWithPopup(auth, provider);
-        } catch (err) {
-            console.error("Google login error:", err);
-            throw err;
+        } catch (err: any) {
+            if (err.code === 'auth/cancelled-popup-request') {
+                console.log("Google login popup request was cancelled (likely a redundant click).");
+            } else {
+                console.error("Google login error:", err);
+                throw err;
+            }
+        } finally {
+            setIsAuthenticating(false);
         }
     };
 
@@ -152,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, refreshUser }}>
+        <AuthContext.Provider value={{ user, loading, isAuthenticating, signInWithGoogle, logout, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );

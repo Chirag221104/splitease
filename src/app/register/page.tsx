@@ -9,17 +9,18 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { FcGoogle } from "react-icons/fc";
+import { HiEye, HiEyeOff } from "react-icons/hi";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 export default function RegisterPage() {
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [phone, setPhone] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const router = useRouter();
-    const { signInWithGoogle } = useAuth();
+    const { signInWithGoogle, isAuthenticating } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -41,8 +42,7 @@ export default function RegisterPage() {
                 displayName: name,
                 photoURL: null,
                 createdAt: serverTimestamp(),
-                groups: [],
-                ...(phone && { phone }) // Include phone only if provided
+                groups: []
             });
 
             router.push("/dashboard");
@@ -61,11 +61,14 @@ export default function RegisterPage() {
     };
 
     const handleGoogleLogin = async () => {
+        setError("");
         try {
             await signInWithGoogle();
             router.push("/dashboard");
         } catch (err: any) {
-            setError("Failed to login with Google");
+            if (err.code !== 'auth/cancelled-popup-request') {
+                setError("Failed to login with Google");
+            }
         }
     };
 
@@ -99,24 +102,28 @@ export default function RegisterPage() {
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="Enter your email"
                         />
-                        <Input
-                            label="Password"
-                            type="password"
-                            required
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Create a password"
-                        />
-                        <Input
-                            label="Phone Number (Optional)"
-                            type="tel"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="+911234567890"
-                        />
-                        <p className="text-xs text-gray-500 -mt-2">
-                            Add your phone number to enable OTP-based password reset
-                        </p>
+                        <div className="relative">
+                            <Input
+                                label="Password"
+                                type={showPassword ? "text" : "password"}
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Create a password"
+                                className="pr-10"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600 focus:outline-none"
+                            >
+                                {showPassword ? (
+                                    <HiEyeOff className="h-5 w-5" />
+                                ) : (
+                                    <HiEye className="h-5 w-5" />
+                                )}
+                            </button>
+                        </div>
                     </div>
 
                     {error && (
@@ -127,6 +134,7 @@ export default function RegisterPage() {
                         type="submit"
                         className="w-full"
                         isLoading={loading}
+                        disabled={isAuthenticating}
                     >
                         Sign up
                     </Button>
@@ -145,6 +153,8 @@ export default function RegisterPage() {
                         variant="outline"
                         className="w-full flex items-center justify-center gap-2"
                         onClick={handleGoogleLogin}
+                        isLoading={isAuthenticating}
+                        disabled={loading}
                     >
                         <FcGoogle className="w-5 h-5" />
                         Google

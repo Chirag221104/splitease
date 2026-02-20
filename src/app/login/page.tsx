@@ -9,10 +9,12 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { FcGoogle } from "react-icons/fc";
+import { HiEye, HiEyeOff } from "react-icons/hi";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
@@ -28,7 +30,14 @@ export default function LoginPage() {
             await signInWithEmailAndPassword(auth, email, password);
             router.push("/dashboard");
         } catch (err: any) {
-            setError(err.message || "Failed to login");
+            console.error("Login error:", err);
+            if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+                setError("Invalid email or password. Please try again.");
+            } else if (err.code === 'auth/too-many-requests') {
+                setError("Too many failed attempts. Please try again later.");
+            } else {
+                setError("Failed to login. Please check your credentials.");
+            }
         } finally {
             setLoading(false);
         }
@@ -39,7 +48,9 @@ export default function LoginPage() {
             await signInWithGoogle();
             router.push("/dashboard");
         } catch (err: any) {
-            setError("Failed to login with Google");
+            if (err.code !== 'auth/cancelled-popup-request') {
+                setError("Failed to login with Google");
+            }
         }
     };
 
@@ -66,29 +77,35 @@ export default function LoginPage() {
                             placeholder="Enter your email"
                         />
 
-                        <div>
+                        <div className="relative">
                             <Input
                                 label="Password"
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="Enter your password"
+                                className="pr-10"
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600 focus:outline-none"
+                            >
+                                {showPassword ? (
+                                    <HiEyeOff className="h-5 w-5" />
+                                ) : (
+                                    <HiEye className="h-5 w-5" />
+                                )}
+                            </button>
 
                             {/* ➤ Forgot Password Link */}
-                            <div className="text-right mt-1 space-y-1">
+                            <div className="text-right mt-1">
                                 <Link
                                     href="/forgot-password"
                                     className="text-sm text-teal-600 hover:text-teal-500 block"
                                 >
                                     Forgot password?
-                                </Link>
-                                <Link
-                                    href="/reset/phone"
-                                    className="text-xs text-gray-500 hover:text-teal-600 block"
-                                >
-                                    Reset with phone number
                                 </Link>
                             </div>
                         </div>

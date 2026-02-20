@@ -3,11 +3,13 @@
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { addExpense, getGroupDetails, getUsersByIds, createActivity } from "@/lib/firestore";
+import { addExpense, getGroupDetails, getUsersByIds, createActivity, getGroupExpenses, getGroupSettlements } from "@/lib/firestore";
+import { calculatePairwiseBalances } from "@/lib/calculations";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, SplitType, Split } from "@/types";
-import { HiArrowLeft, HiCheckCircle } from "react-icons/hi";
+import { HiArrowLeft, HiCheckCircle, HiTag, HiLightningBolt, HiUserGroup, HiOutlineTemplate } from "react-icons/hi";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function AddExpensePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -22,6 +24,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
     const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
+    const [pairwiseLedger, setPairwiseLedger] = useState<Record<string, Record<string, number>>>({});
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -30,10 +33,16 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
             try {
                 const group = await getGroupDetails(id);
                 if (group) {
-                    const users = await getUsersByIds(group.members);
+                    const [users, expenses, settlements] = await Promise.all([
+                        getUsersByIds(group.members),
+                        getGroupExpenses(id),
+                        getGroupSettlements(id)
+                    ]);
+
                     setMembers(users);
-                    // Select all participants by default
                     setSelectedParticipants(new Set(users.map(u => u.uid)));
+                    const ledger = calculatePairwiseBalances(expenses, settlements, group.members);
+                    setPairwiseLedger(ledger);
                 }
             } catch (err) {
                 console.error("Error fetching members:", err);
@@ -60,6 +69,10 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                 delete newContributors[uid];
             } else {
                 newContributors[uid] = "0";
+                // If this is the only one, maybe auto-fill amount?
+                if (Object.keys(prev).length === 0 && amount) {
+                    newContributors[uid] = amount;
+                }
             }
             return newContributors;
         });
@@ -81,8 +94,9 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     };
 
     const calculateSplits = (): Split[] => {
-        const numAmount = parseFloat(amount);
+        const numAmount = parseFloat(amount) || 0;
         const participants = Array.from(selectedParticipants);
+        if (participants.length === 0) return [];
 
         if (splitType === "EQUAL") {
             const perPerson = numAmount / participants.length;
@@ -108,6 +122,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
             const totalShares = participants.reduce((sum, uid) => {
                 return sum + parseFloat(customSplits[uid] || "1");
             }, 0);
+            if (totalShares === 0) return participants.map(uid => ({ userId: uid, amount: 0, shares: 0 }));
             return participants.map(userId => {
                 const shares = parseFloat(customSplits[userId] || "1");
                 return {
@@ -145,15 +160,13 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
             const numAmount = parseFloat(amount);
             const splits = calculateSplits();
 
-            // Validate splits
             const totalSplit = splits.reduce((sum, s) => sum + s.amount, 0);
-            if (Math.abs(totalSplit - numAmount) > 0.01) {
-                setError(`Split amounts do not equal total: ${totalSplit.toFixed(2)} vs ${numAmount.toFixed(2)}`);
+            if (Math.abs(totalSplit - numAmount) > 0.05) { // Small buffer for rounding
+                setError("Split amounts do not equal total. Please check weights.");
                 setLoading(false);
                 return;
             }
 
-            // Convert contributors to numbers
             const contributorsData: Record<string, number> = {};
             Object.entries(contributors).forEach(([uid, amountStr]) => {
                 contributorsData[uid] = parseFloat(amountStr || "0");
@@ -170,7 +183,6 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                 createdBy: user.uid
             });
 
-            // Log activity with contributors info
             const contributorDescriptions = Object.entries(contributorsData)
                 .filter(([_, amt]) => amt > 0)
                 .map(([uid, amt]) => {
@@ -201,201 +213,317 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     };
 
     const getUserName = (member: User) => {
-        return member.uid === user?.uid ? "You" : (member.displayName || member.email);
+        return member.uid === user?.uid ? "You" : (member.displayName || member.email?.split('@')[0]);
     };
 
-    const splits = selectedParticipants.size > 0 ? calculateSplits() : [];
-    const totalAmount = parseFloat(amount) || 0;
+    const currentSplits = calculateSplits();
+    const totalAmountNum = parseFloat(amount) || 0;
 
     return (
-        <div className="max-w-3xl mx-auto">
-            <Button variant="ghost" onClick={() => router.back()} className="mb-6 pl-0 hover:bg-transparent hover:text-teal-600">
-                <HiArrowLeft className="w-5 h-5 mr-2" />
-                Back to Group
-            </Button>
+        <div className="max-w-6xl mx-auto px-4 pb-20">
+            <header className="mb-10 flex items-center justify-between">
+                <div>
+                    <motion.button
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        onClick={() => router.back()}
+                        className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-semibold uppercase tracking-wider text-[11px] mb-4 transition-colors group"
+                    >
+                        <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                        Back to Group
+                    </motion.button>
+                    <h1 className="text-3xl font-bold text-gray-800 tracking-tight">
+                        Add <span className="text-teal-600">Expense</span>
+                    </h1>
+                </div>
+                <div className="hidden sm:block">
+                    <div className="bg-teal-50/60 px-4 py-2 rounded-2xl border border-teal-100/60 flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></div>
+                        <span className="text-[10px] font-semibold uppercase text-teal-600 tracking-wider">Live Sync Enabled</span>
+                    </div>
+                </div>
+            </header>
 
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Add Expense</h1>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+                {/* FORM COLUMN */}
+                <div className="lg:col-span-8 space-y-8">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white p-8 sm:p-10 rounded-3xl shadow-lg shadow-gray-100/50 border border-gray-100 space-y-10 relative overflow-hidden"
+                    >
+                        {/* Decorative background */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-teal-50 rounded-bl-full opacity-10 -mr-20 -mt-20 pointer-events-none"></div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Main Form */}
-                <div className="lg:col-span-2">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <Input
-                                label="Description"
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                                placeholder="e.g., Dinner at Taj"
-                                required
-                            />
-
-                            <Input
-                                label="Amount (₹)"
-                                type="number"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                placeholder="0.00"
-                                min="0"
-                                step="0.01"
-                                required
-                            />
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Paid By (Contributors)
-                                </label>
-                                <div className="space-y-2 bg-gray-50 p-3 rounded-lg">
-                                    {members.map(member => (
-                                        <div key={member.uid} className="flex items-center gap-3 p-2 bg-white rounded hover:bg-gray-50 transition">
-                                            <input
-                                                type="checkbox"
-                                                checked={contributors[member.uid] !== undefined}
-                                                onChange={() => toggleContributor(member.uid)}
-                                                className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
-                                            />
-                                            <span className="flex-1 text-sm text-gray-900">
-                                                {getUserName(member)}
-                                            </span>
-                                            {contributors[member.uid] !== undefined && (
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    value={contributors[member.uid]}
-                                                    onChange={(e) => updateContribution(member.uid, e.target.value)}
-                                                    placeholder="₹ Amount paid"
-                                                    className="w-32 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-teal-500"
-                                                />
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                                {amount && Object.keys(contributors).length > 0 && !validateContributors() && (
-                                    <p className="text-red-500 text-sm mt-2">
-                                        Total contributions must equal ₹{parseFloat(amount).toFixed(2)}.
-                                        Currently: ₹{Object.values(contributors).reduce((sum, val) => sum + parseFloat(val || "0"), 0).toFixed(2)}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Split Type</label>
-                                <select
-                                    value={splitType}
-                                    onChange={(e) => setSplitType(e.target.value as SplitType)}
-                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                >
-                                    <option value="EQUAL">Split Equally</option>
-                                    <option value="UNEQUAL">Exact Amounts</option>
-                                    <option value="PERCENTAGE">By Percentage</option>
-                                    <option value="SHARES">By Shares</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">Select Participants</label>
+                        <form onSubmit={handleSubmit} className="space-y-12 relative z-10">
+                            {/* 1. Basic Info */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                                 <div className="space-y-2">
-                                    {members.map(member => (
-                                        <div key={member.uid} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedParticipants.has(member.uid)}
-                                                onChange={() => toggleParticipant(member.uid)}
-                                                className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
-                                            />
-                                            <span className="flex-1 text-sm text-gray-900">{getUserName(member)}</span>
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                        <HiTag className="w-3 h-3 text-teal-400" /> What's this for?
+                                    </label>
+                                    <Input
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        placeholder="e.g., Round 1 Cocktails"
+                                        className="h-14 px-5 text-base font-medium rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:border-teal-400 transition-all placeholder:text-gray-300"
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                        <HiLightningBolt className="w-3 h-3 text-teal-400" /> How much?
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-5 top-1/2 -translate-y-1/2 text-xl font-bold text-teal-500">₹</span>
+                                        <Input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => setAmount(e.target.value)}
+                                            placeholder="0.00"
+                                            className="h-14 pl-11 pr-5 text-xl font-bold rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:border-teal-400 transition-all placeholder:text-gray-300"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                            </div>
 
-                                            {selectedParticipants.has(member.uid) && splitType !== "EQUAL" && (
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    value={customSplits[member.uid] || (splitType === "SHARES" ? "1" : "0")}
-                                                    onChange={(e) => setCustomSplits({ ...customSplits, [member.uid]: e.target.value })}
-                                                    placeholder={splitType === "PERCENTAGE" ? "%" : splitType === "SHARES" ? "shares" : "₹"}
-                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
-                                                />
-                                            )}
-                                        </div>
-                                    ))}
+                            {/* 2. Who Paid */}
+                            <div className="space-y-6">
+                                <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                    <HiUserGroup className="w-3 h-3 text-teal-400" /> Who Paid?
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {members.map(member => {
+                                        const isSelected = contributors[member.uid] !== undefined;
+                                        return (
+                                            <motion.div
+                                                key={member.uid}
+                                                whileHover={{ y: -2 }}
+                                                className={`relative cursor-pointer group`}
+                                            >
+                                                <div
+                                                    onClick={() => toggleContributor(member.uid)}
+                                                    className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-3 text-center ${isSelected
+                                                        ? 'bg-teal-50 border-teal-300 shadow-sm text-teal-700'
+                                                        : 'bg-white border-gray-100 text-gray-500 hover:border-teal-200'
+                                                        }`}
+                                                >
+                                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-base ${isSelected ? 'bg-teal-500 text-white' : 'bg-gray-50 text-gray-400 group-hover:bg-teal-50 group-hover:text-teal-500'
+                                                        }`}>
+                                                        {member.displayName?.charAt(0).toUpperCase() || member.email?.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <span className="text-xs font-semibold truncate w-full">{getUserName(member)}</span>
+
+                                                    {isSelected && (
+                                                        <HiCheckCircle className="absolute top-2 right-2 w-5 h-5 text-teal-500" />
+                                                    )}
+                                                </div>
+
+                                                <AnimatePresence>
+                                                    {isSelected && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, scale: 0.9 }}
+                                                            animate={{ opacity: 1, scale: 1 }}
+                                                            exit={{ opacity: 0, scale: 0.9 }}
+                                                            className="mt-2"
+                                                        >
+                                                            <Input
+                                                                type="number"
+                                                                value={contributors[member.uid]}
+                                                                onChange={(e) => updateContribution(member.uid, e.target.value)}
+                                                                className="h-10 text-center font-medium rounded-xl border-gray-200 text-sm focus:border-teal-400"
+                                                                placeholder="₹0.00"
+                                                            />
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* 3. Split Config */}
+                            <div className="space-y-8">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                        <HiOutlineTemplate className="w-3 h-3 text-teal-400" /> Split Policy
+                                    </label>
+                                    <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+                                        {(['EQUAL', 'UNEQUAL', 'PERCENTAGE', 'SHARES'] as SplitType[]).map(type => (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                onClick={() => setSplitType(type)}
+                                                className={`px-4 py-2 rounded-xl text-[11px] font-semibold uppercase tracking-wider transition-all ${splitType === type
+                                                    ? 'bg-white text-teal-600 shadow-sm border border-teal-100'
+                                                    : 'text-gray-400 hover:text-gray-500'
+                                                    }`}
+                                            >
+                                                {type === 'EQUAL' ? 'Equally' : type.replace('AGE', '')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <p className="text-[11px] font-medium text-gray-300 uppercase px-1">Configure weights & participation</p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {members.map(member => {
+                                            const isActive = selectedParticipants.has(member.uid);
+                                            return (
+                                                <div
+                                                    key={member.uid}
+                                                    className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${isActive ? 'bg-teal-50/20 border-teal-100/80' : 'bg-white border-gray-50 opacity-40 grayscale pointer-events-none sm:pointer-events-auto sm:grayscale-0 sm:opacity-100'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isActive}
+                                                            onChange={() => toggleParticipant(member.uid)}
+                                                            className="w-5 h-5 text-teal-600 rounded-lg focus:ring-teal-500 cursor-pointer"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-semibold text-gray-800 leading-none">{getUserName(member)}</span>
+                                                            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-tight mt-1">
+                                                                {member.uid !== user?.uid ? (
+                                                                    (() => {
+                                                                        const userOwes = pairwiseLedger[user?.uid || ""]?.[member.uid] || 0;
+                                                                        const userIsOwed = pairwiseLedger[member.uid]?.[user?.uid || ""] || 0;
+                                                                        if (userOwes > 0) return <span className="text-rose-400">Owes him ₹{userOwes.toLocaleString()}</span>;
+                                                                        if (userIsOwed > 0) return <span className="text-teal-500">He owes you ₹{userIsOwed.toLocaleString()}</span>;
+                                                                        return 'Settled up';
+                                                                    })()
+                                                                ) : 'Owner'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {isActive && splitType !== "EQUAL" && (
+                                                        <div className="w-24">
+                                                            <Input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={customSplits[member.uid] || (splitType === "SHARES" ? "1" : "0")}
+                                                                onChange={(e) => setCustomSplits({ ...customSplits, [member.uid]: e.target.value })}
+                                                                className="h-10 font-medium text-center text-sm rounded-xl border-gray-200 focus:border-teal-400 bg-white"
+                                                                placeholder={splitType === "PERCENTAGE" ? "%" : splitType === "SHARES" ? "X" : "₹"}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
 
                             {error && (
-                                <p className="text-red-500 text-sm">{error}</p>
+                                <motion.p
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="text-rose-500 text-xs font-semibold text-center bg-rose-50 py-3 rounded-2xl border border-rose-100"
+                                >
+                                    {error}
+                                </motion.p>
                             )}
 
-                            <div className="flex justify-end gap-3 pt-4">
+                            <div className="flex flex-col sm:flex-row gap-4 pt-6">
+                                <Button
+                                    type="submit"
+                                    isLoading={loading}
+                                    className="flex-1 py-5 rounded-2xl text-base font-bold tracking-wide shadow-md shadow-teal-100/50 hover:shadow-lg transition-all"
+                                >
+                                    Log Transaction
+                                </Button>
                                 <Button
                                     type="button"
                                     variant="ghost"
                                     onClick={() => router.back()}
+                                    className="py-5 px-8 rounded-2xl text-gray-400 font-medium hover:bg-gray-50 transition-all uppercase tracking-wider text-xs"
                                 >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    isLoading={loading}
-                                >
-                                    Save Expense
+                                    Nevermind
                                 </Button>
                             </div>
                         </form>
-                    </div>
+                    </motion.div>
                 </div>
 
-                {/* Preview Sidebar */}
-                <div className="lg:col-span-1">
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 sticky top-4">
-                        <h3 className="font-semibold text-gray-900 mb-4">Summary</h3>
-                        {totalAmount > 0 ? (
-                            <div className="space-y-4">
-                                {/* Contributors Section */}
-                                {Object.keys(contributors).length > 0 && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Who Paid:</h4>
-                                        <div className="space-y-1">
-                                            {Object.entries(contributors).map(([uid, amount]) => {
-                                                const member = members.find(m => m.uid === uid);
-                                                if (!member || !amount || parseFloat(amount) === 0) return null;
-                                                return (
-                                                    <div key={uid} className="flex justify-between text-sm py-1">
-                                                        <span className="text-gray-600">{getUserName(member)}</span>
-                                                        <span className="font-medium text-teal-600">₹{parseFloat(amount).toFixed(2)}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
+                {/* RECEIPT COLUMN */}
+                <div className="lg:col-span-4 sticky top-10">
+                    <motion.div
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="bg-gray-900 text-white p-8 rounded-[40px] shadow-2xl shadow-gray-200 relative overflow-hidden"
+                    >
+                        {/* Receipt zigzag edge */}
+                        <div className="absolute top-0 left-0 w-full h-2 flex">
+                            {[...Array(12)].map((_, i) => (
+                                <div key={i} className="flex-1 h-2 bg-white" style={{ clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}></div>
+                            ))}
+                        </div>
 
-                                {/* Splits Section */}
-                                {selectedParticipants.size > 0 && (
-                                    <div className="pt-3 border-t border-gray-200">
-                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Who Owes:</h4>
-                                        <div className="space-y-1">
-                                            {splits.map((split) => {
-                                                const member = members.find(m => m.uid === split.userId);
-                                                if (!member) return null;
-                                                return (
-                                                    <div key={split.userId} className="flex justify-between items-center text-sm pb-1">
-                                                        <span className="text-gray-600">{getUserName(member)}</span>
-                                                        <span className="font-medium text-gray-900">₹{split.amount.toFixed(2)}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                        <div className="flex justify-between items-center text-sm pt-2 mt-2 border-t border-gray-200 font-bold">
-                                            <span>Total</span>
-                                            <span className="text-teal-600">₹{totalAmount.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                )}
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-teal-400 mb-8 border-b border-white/10 pb-4">Live Receipt Preview</h3>
+
+                        <div className="space-y-8">
+                            {/* Amount */}
+                            <div className="text-center py-6">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Grand Total</p>
+                                <p className="text-5xl font-black italic tracking-tighter">
+                                    <span className="text-teal-400 not-italic mr-1 text-4xl">₹</span>{totalAmountNum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
                             </div>
-                        ) : (
-                            <p className="text-sm text-gray-500">Enter amount and select contributors to see preview</p>
-                        )}
-                    </div>
+
+                            {/* Breakdown */}
+                            <div className="space-y-6">
+                                <div>
+                                    <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-teal-500"></div> Funding Sauce
+                                    </div>
+                                    <div className="space-y-3">
+                                        {Object.entries(contributors).map(([uid, val]) => {
+                                            const member = members.find(m => m.uid === uid);
+                                            const valNum = parseFloat(val) || 0;
+                                            if (!member || valNum === 0) return null;
+                                            return (
+                                                <div key={uid} className="flex justify-between items-center bg-white/5 p-3 rounded-2xl border border-white/5">
+                                                    <span className="text-xs font-bold text-gray-300">{getUserName(member)}</span>
+                                                    <span className="text-sm font-black text-teal-400">₹{valNum.toLocaleString()}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        {Object.keys(contributors).length === 0 && <p className="text-[10px] text-gray-600 italic">No payers selected yet</p>}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Distribution
+                                    </div>
+                                    <div className="space-y-3">
+                                        {currentSplits.map(split => {
+                                            const member = members.find(m => m.uid === split.userId);
+                                            if (!member || split.amount === 0) return null;
+                                            return (
+                                                <div key={split.userId} className="flex justify-between items-center border-b border-white/5 pb-2">
+                                                    <span className="text-xs font-medium text-gray-400">{getUserName(member)}</span>
+                                                    <span className="text-xs font-black">₹{split.amount.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        {currentSplits.length === 0 && <p className="text-[10px] text-gray-600 italic">Selection is empty</p>}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-8 border-t border-dashed border-white/20 text-center">
+                                <p className="text-[10px] font-bold text-gray-500 italic">SplitEase Premium Internal Voucher</p>
+                                <p className="text-[9px] font-medium text-gray-600 mt-1 uppercase tracking-tighter">Powered by chirag malde systems</p>
+                            </div>
+                        </div>
+                    </motion.div>
                 </div>
             </div>
         </div>

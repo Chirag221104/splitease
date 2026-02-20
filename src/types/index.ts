@@ -4,8 +4,8 @@ export interface User {
     displayName: string | null;
     username?: string;
     photoURL: string | null;
+    friends?: string[]; // Array of User UIDs for fast querying
     createdAt?: number;
-    phone?: string; // Optional phone number for OTP-based password reset
 }
 
 export interface Group {
@@ -41,6 +41,17 @@ export interface Expense {
     createdBy: string;
     createdAt: number;
     note?: string;
+    isDeleted?: boolean; // Soft delete for ledger integrity
+    currentVersion?: number;
+}
+
+export interface ExpenseVersion {
+    id: string;
+    expenseId: string;
+    version: number;
+    snapshot: Omit<Expense, "id" | "currentVersion">;
+    updatedBy: string;
+    updatedAt: number;
 }
 
 export interface Settlement {
@@ -74,7 +85,7 @@ export interface Invite {
 
 export interface Activity {
     id: string;
-    type: 'expense' | 'settle' | 'invite_accepted' | 'group_created';
+    type: 'expense' | 'settle' | 'invite_accepted' | 'group_created' | 'expense_edited' | 'expense_deleted' | 'friend_request_sent' | 'friend_request_accepted' | 'friend_request_declined' | 'friendship_removed' | 'friendship_reactivated' | 'member_removed';
     groupId: string;
     userId: string;
     amount?: number;
@@ -85,4 +96,21 @@ export interface Activity {
 
 export interface ExpenseWithGroup extends Expense {
     groupName: string;
+}
+
+export interface FriendRequest {
+    id: string;
+    fromId: string;
+    toId: string;
+    status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+    createdAt: number;
+}
+
+export interface Friendship {
+    id: string;
+    user1: string;
+    user2: string;
+    isActive: boolean; // Soft delete/reactivation
+    createdAt: number;
+    updatedAt?: number;
 }
