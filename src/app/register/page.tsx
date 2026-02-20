@@ -15,6 +15,7 @@ export default function RegisterPage() {
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [phone, setPhone] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const router = useRouter();
@@ -40,13 +41,17 @@ export default function RegisterPage() {
                 displayName: name,
                 photoURL: null,
                 createdAt: serverTimestamp(),
-                groups: []
+                groups: [],
+                ...(phone && { phone }) // Include phone only if provided
             });
 
             router.push("/dashboard");
         } catch (err: any) {
+            console.error("Registration error:", err);
             if (err.code === 'auth/email-already-in-use') {
                 setError("Email already registered with Google or another provider. Please sign in.");
+            } else if (err.code === 'permission-denied') {
+                setError("Firestore permission denied. Please check your security rules in the Firebase Console.");
             } else {
                 setError(err.message || "Failed to register");
             }
@@ -102,6 +107,16 @@ export default function RegisterPage() {
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="Create a password"
                         />
+                        <Input
+                            label="Phone Number (Optional)"
+                            type="tel"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="+911234567890"
+                        />
+                        <p className="text-xs text-gray-500 -mt-2">
+                            Add your phone number to enable OTP-based password reset
+                        </p>
                     </div>
 
                     {error && (

@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites } from "@/lib/firestore";
+import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense } from "@/lib/firestore";
 import { calculateGroupBalances, simplifyDebts } from "@/lib/calculations";
 import { getDisplayName } from "@/lib/utils";
 import { Group, Expense, Settlement, Transaction, User, Invite } from "@/types";
@@ -74,6 +74,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     };
 
     if (loading) return <div className="p-4">Loading group details...</div>;
+    if (!user) return <div className="p-4">You must be logged in.</div>;
     if (!group) return <div className="p-4">Group not found</div>;
 
     return (
@@ -87,7 +88,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             <p className="mt-1 text-gray-500">{group.description}</p>
                         )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 justify-end max-w-full">
                         <Link href="/dashboard">
                             <Button variant="outline" className="flex items-center gap-2">
                                 <HiHome className="w-5 h-5" />
@@ -99,7 +100,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             Invite Member
                         </Button>
                         <Link href={`/groups/${id}/expenses/new`}>
-                            <Button className="flex items-center gap-2">
+                            <Button className="flex items-center gap-2 whitespace-nowrap">
                                 <HiPlus className="w-5 h-5" />
                                 Add Expense
                             </Button>
@@ -130,7 +131,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
                 {/* Main Content: Expenses */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -239,7 +240,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 {/* Sidebar: Balances & Members */}
-                <div className="space-y-6">
+                <div className="space-y-6 w-full">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                         <h3 className="font-semibold text-gray-900 mb-4">Balances</h3>
                         {balances.length === 0 ? (
@@ -326,6 +327,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             const myDebts: { member: string; amount: number }[] = [];
 
                             // Money I owe to others
+
                             if (memberBalances[user?.uid || ""]) {
                                 Object.entries(memberBalances[user.uid]).forEach(([memberId, amount]) => {
                                     if (amount > 0.01) {

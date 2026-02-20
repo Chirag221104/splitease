@@ -7,9 +7,6 @@ import {
     signInWithPopup,
     GoogleAuthProvider,
     signOut,
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    updateProfile
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
@@ -35,23 +32,60 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
+
+    /** 
+     *  IMPORTANT FIX:
+     *  loading should default to TRUE until Firebase finishes initial auth check
+     */
     const [loading, setLoading] = useState(true);
 
     const fetchUserData = async (firebaseUser: FirebaseUser): Promise<User> => {
-        const userRef = doc(db, "users", firebaseUser.uid);
-        const userSnap = await getDoc(userRef);
+        try {
+            const userRef = doc(db, "users", firebaseUser.uid);
+            const userSnap = await getDoc(userRef);
 
-        if (!userSnap.exists()) {
-            // Create new user document
-            const newUser = {
+            if (!userSnap.exists()) {
+                const newUser = {
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    displayName: firebaseUser.displayName,
+                    photoURL: firebaseUser.photoURL,
+                    createdAt: serverTimestamp(),
+                };
+                try {
+                    await setDoc(userRef, newUser);
+                } catch (error) {
+                    console.error("Error creating user profile in Firestore:", error);
+                    // Return basic user info if Firestore fails
+                    return {
+                        uid: firebaseUser.uid,
+                        email: firebaseUser.email,
+                        displayName: firebaseUser.displayName,
+                        photoURL: firebaseUser.photoURL,
+                    };
+                }
+
+                return {
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    displayName: firebaseUser.displayName,
+                    photoURL: firebaseUser.photoURL,
+                };
+            }
+
+            const firestoreData = userSnap.data();
+
+            return {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                createdAt: serverTimestamp(),
-                groups: []
+                username: firestoreData.username,
+                createdAt: firestoreData.createdAt,
             };
-            await setDoc(userRef, newUser);
+        } catch (error) {
+            console.error("Error fetching user data from Firestore:", error);
+            // Fallback to basic Firebase Auth data if Firestore is unreachable/denied
             return {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
@@ -59,64 +93,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 photoURL: firebaseUser.photoURL,
             };
         }
-
-        // Merge Firebase Auth data with Firestore data
-        const firestoreData = userSnap.data();
-        return {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            username: firestoreData.username || undefined,
-            createdAt: firestoreData.createdAt,
-        };
     };
 
     const refreshUser = async () => {
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-            const userData = await fetchUserData(currentUser);
-            setUser(userData);
+        if (auth.currentUser) {
+            const data = await fetchUserData(auth.currentUser);
+            setUser(data);
         }
     };
 
     useEffect(() => {
+        /** 
+         *  IMPORTANT FIX:
+         *  Prevent duplicate listeners during React Strict Mode (prod builds)
+         */
+        let unsubscribed = false;
+
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (unsubscribed) return;
+
             try {
                 if (firebaseUser) {
-                    const userData = await fetchUserData(firebaseUser);
-                    setUser(userData);
+                    const data = await fetchUserData(firebaseUser);
+                    setUser(data);
                 } else {
                     setUser(null);
                 }
             } catch (error) {
-                console.error("Error setting up user:", error);
-                setUser(null);
+                console.error("Error in onAuthStateChanged:", error);
             } finally {
-                setLoading(false);
+                setLoading(false); // only after Firebase finishes
             }
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribed = true;
+            unsubscribe();
+        };
     }, []);
 
+    /** FIX: Google popup breaks if triggered during redirect or loading */
     const signInWithGoogle = async () => {
+        if (loading) return; // avoid multiple clicks
+
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: "select_account" });
+
         try {
             await signInWithPopup(auth, provider);
-        } catch (error) {
-            console.error("Error signing in with Google", error);
-            throw error;
+        } catch (err) {
+            console.error("Google login error:", err);
+            throw err;
         }
     };
 
     const logout = async () => {
-        try {
-            await signOut(auth);
-        } catch (error) {
-            console.error("Error signing out", error);
-        }
+        await signOut(auth);
     };
 
     return (

@@ -5,6 +5,7 @@ export interface User {
     username?: string;
     photoURL: string | null;
     createdAt?: number;
+    phone?: string; // Optional phone number for OTP-based password reset
 }
 
 export interface Group {
@@ -80,4 +81,8 @@ export interface Activity {
     description: string;
     metadata?: Record<string, any>;
     createdAt: number;
+}
+
+export interface ExpenseWithGroup extends Expense {
+    groupName: string;
 }

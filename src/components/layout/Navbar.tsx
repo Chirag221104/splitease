@@ -23,17 +23,12 @@ export function Navbar({ onMenuClick }: NavbarProps) {
                     <span className="sr-only">Open sidebar</span>
                     <HiMenu className="h-6 w-6" aria-hidden="true" />
                 </button>
-
-                <Link href="/dashboard" className="flex items-center gap-1 text-teal-600 hover:text-teal-700">
-                    <HiHome className="h-5 w-5" />
-                    <span className="text-sm font-medium">Dashboard</span>
-                </Link>
             </div>
 
             <div className="flex-1 flex justify-end items-center px-4">
                 <h1 className="text-lg font-semibold text-gray-900 md:hidden mr-auto ml-4">SplitEase</h1>
                 <div className="ml-4 flex items-center md:ml-6">
-                    <span className="text-sm text-gray-700 mr-4 hidden sm:block">
+                    <span className="text-sm text-gray-700 mr-4">
                         {user?.displayName || user?.email}
                     </span>
                     <Button variant="ghost" size="sm" onClick={logout}>
