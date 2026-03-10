@@ -87,8 +87,8 @@ export default function ExpensesPage() {
                         >
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
                                 {/* Left Section - Date & Description */}
-                                <div className="flex items-center gap-6">
-                                    <div className="bg-gray-50 p-2 text-center min-w-[60px] rounded-xl group-hover:bg-teal-50 transition-colors duration-300">
+                                <div className="flex items-center gap-6 flex-1 min-w-0">
+                                    <div className="bg-gray-50 p-2 text-center min-w-[60px] shrink-0 rounded-xl group-hover:bg-teal-50 transition-colors duration-300">
                                         <p className="text-[10px] uppercase font-black text-gray-400 group-hover:text-teal-400">
                                             {formatDate(expense.createdAt || expense.date).split(' ')[0]}
                                         </p>
@@ -96,22 +96,22 @@ export default function ExpensesPage() {
                                             {formatDate(expense.createdAt || expense.date).split(' ')[1]}
                                         </p>
                                     </div>
-                                    <div className="space-y-1">
-                                        <div className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-black tracking-widest uppercase rounded border border-amber-100">
+                                    <div className="space-y-1 flex-1 min-w-0">
+                                        <div className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-black tracking-widest uppercase rounded border border-amber-100 truncate max-w-full">
                                             {expense.groupName}
                                         </div>
                                         <h3 className="text-xl font-bold text-gray-900 truncate">
                                             {expense.description}
                                         </h3>
-                                        <p className="text-sm text-gray-500 font-medium italic">
+                                        <p className="text-sm text-gray-500 font-medium italic truncate">
                                             Paid by <span className="text-gray-900 no-italic font-bold">{expense.paidBy || 'Multiple'}</span>
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Right Section - Amount & Action */}
-                                <div className="flex items-center justify-between sm:justify-end gap-6 sm:pl-6 sm:border-l border-gray-50 ">
-                                    <div className="text-right">
+                                <div className="flex items-center justify-between sm:justify-end gap-6 pl-[84px] sm:pl-6 sm:border-l border-gray-50">
+                                    <div className="text-left sm:text-right">
                                         <p className="text-2xl font-black text-teal-600">
                                             <span className="text-teal-500 mr-0.5 font-medium">₹</span>{expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </p>

@@ -52,6 +52,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [showAddMember, setShowAddMember] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const fetchData = async () => {
         if (!user || !id) return;
@@ -165,47 +166,6 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             </motion.p>
                         )}
                     </div>
-                    <div className="flex flex-wrap gap-3 justify-end w-full md:w-auto">
-                        <Link href="/dashboard">
-                            <Button variant="outline" className="rounded-xl border-gray-100 px-4">
-                                <HiHome className="w-5 h-5 mr-1" />
-                                Dashboard
-                            </Button>
-                        </Link>
-                        <Button variant="outline" onClick={() => setShowAddMember(!showAddMember)} className="rounded-xl border-gray-100">
-                            <HiUserAdd className="w-5 h-5 mr-2" />
-                            Invite
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsExportModalOpen(true)}
-                            className="rounded-xl border-gray-100"
-                        >
-                            <HiDownload className="w-5 h-5 mr-2" />
-                            Export
-                        </Button>
-                        <Link href={`/groups/${id}/expenses/new`}>
-                            <Button className="rounded-xl shadow-lg shadow-teal-100 px-6">
-                                <HiPlus className="w-5 h-5 mr-1" />
-                                Expense
-                            </Button>
-                        </Link>
-                        <Link href={`/groups/${id}/settle`}>
-                            <Button variant="secondary" className="rounded-xl px-6">
-                                <HiCurrencyDollar className="w-5 h-5 mr-1" />
-                                Settle
-                            </Button>
-                        </Link>
-                        {user?.uid === group.createdBy && (
-                            <Button
-                                variant="outline"
-                                className="rounded-xl border-rose-100 text-rose-500 hover:bg-rose-50"
-                                onClick={() => setShowDeleteModal(true)}
-                            >
-                                <HiTrash className="w-5 h-5" />
-                            </Button>
-                        )}
-                    </div>
                 </div>
 
                 <div className="flex flex-wrap gap-4">
@@ -282,9 +242,9 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                         transition={{ delay: idx * 0.05 }}
                                         className="p-6 hover:bg-gray-50/50 transition-colors group relative"
                                     >
-                                        <div className="flex justify-between items-center gap-4">
-                                            <div className="flex items-center gap-6 flex-1 min-w-0">
-                                                <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[64px] text-center">
+                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-6">
+                                            <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
+                                                <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[64px] shrink-0 text-center">
                                                     <span className="text-[10px] font-black uppercase text-gray-400 block mb-0.5 group-hover:text-teal-400">
                                                         {(() => {
                                                             const dateVal = expense.date || expense.createdAt;
@@ -327,15 +287,15 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-6">
-                                                <div className="text-right">
+                                            <div className="flex items-center justify-between sm:justify-end gap-6 pl-20 sm:pl-0 sm:shrink-0">
+                                                <div className="text-left sm:text-right">
                                                     <p className="text-2xl font-black text-gray-900">₹{expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{expense.splitType}</p>
                                                     {(() => {
                                                         const { before, after, impact } = getBalanceAtExpense(expense.id);
                                                         if (impact === 0 && before === after) return null;
                                                         return (
-                                                            <div className="mt-1 flex flex-col items-end">
+                                                            <div className="mt-1 flex flex-col items-start sm:items-end">
                                                                 <p className={`text-[9px] font-bold uppercase ${impact >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>
                                                                     {impact >= 0 ? '+' : ''}₹{impact.toLocaleString()} impact
                                                                 </p>
@@ -349,7 +309,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                 {group.createdBy === user?.uid && (
                                                     <Link
                                                         href={`/groups/${id}/expenses/${expense.id}/edit`}
-                                                        className="opacity-0 group-hover:opacity-100 transition-opacity p-2 bg-white rounded-xl shadow-sm border border-gray-100 text-teal-600 hover:text-teal-700"
+                                                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-2 bg-white rounded-xl shadow-sm border border-gray-100 text-teal-600 hover:text-teal-700 shrink-0"
                                                     >
                                                         Edit
                                                     </Link>
@@ -584,11 +544,116 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
             <ExportReportModal
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
-                group={group}
+                group={group!}
                 expenses={expenses}
                 settlements={settlements}
                 members={members}
             />
+
+            {/* Floating Action Button & Menu */}
+            < div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50 flex flex-col items-end" >
+                <AnimatePresence>
+                    {isMenuOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                            transition={{ duration: 0.2 }}
+                            className="mb-4 bg-white/90 backdrop-blur-xl border border-gray-200/50 shadow-2xl rounded-3xl p-3 flex flex-col gap-2 w-56 md:w-64 origin-bottom-right"
+                        >
+                            <Link href={`/groups/${id}/expenses/new`} onClick={() => setIsMenuOpen(false)}>
+                                <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors cursor-pointer group">
+                                    <div className="p-2 bg-white rounded-xl shadow-sm group-hover:shadow-md transition-shadow">
+                                        <HiPlus className="w-5 h-5" />
+                                    </div>
+                                    <span className="font-bold text-sm">Add Expense</span>
+                                </div>
+                            </Link>
+
+                            <Link href={`/groups/${id}/settle`} onClick={() => setIsMenuOpen(false)}>
+                                <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer group">
+                                    <div className="p-2 bg-white rounded-xl shadow-sm group-hover:shadow-md transition-shadow">
+                                        <HiCurrencyDollar className="w-5 h-5" />
+                                    </div>
+                                    <span className="font-bold text-sm">Settle Up</span>
+                                </div>
+                            </Link>
+
+                            <div className="h-px bg-gray-100 my-1 mx-2" />
+
+                            <button
+                                onClick={() => { setShowAddMember(!showAddMember); setIsMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                className="flex items-center gap-3 w-full p-3 rounded-2xl hover:bg-gray-50 text-gray-700 transition-colors text-left group"
+                            >
+                                <div className="p-2 bg-gray-100 rounded-xl group-hover:bg-white group-hover:shadow-sm transition-all">
+                                    <HiUserAdd className="w-5 h-5 text-gray-500" />
+                                </div>
+                                <span className="font-bold text-sm">Invite Member</span>
+                            </button>
+
+                            <button
+                                onClick={() => { setIsExportModalOpen(true); setIsMenuOpen(false); }}
+                                className="flex items-center gap-3 w-full p-3 rounded-2xl hover:bg-gray-50 text-gray-700 transition-colors text-left group"
+                            >
+                                <div className="p-2 bg-gray-100 rounded-xl group-hover:bg-white group-hover:shadow-sm transition-all">
+                                    <HiDownload className="w-5 h-5 text-gray-500" />
+                                </div>
+                                <span className="font-bold text-sm">Export Data</span>
+                            </button>
+
+                            <Link href="/dashboard" onClick={() => setIsMenuOpen(false)}>
+                                <div className="flex items-center gap-3 w-full p-3 rounded-2xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer group">
+                                    <div className="p-2 bg-gray-100 rounded-xl group-hover:bg-white group-hover:shadow-sm transition-all">
+                                        <HiHome className="w-5 h-5 text-gray-500" />
+                                    </div>
+                                    <span className="font-bold text-sm">Dashboard</span>
+                                </div>
+                            </Link>
+
+                            {user?.uid === group.createdBy && (
+                                <>
+                                    <div className="h-px bg-gray-100 my-1 mx-2" />
+                                    <button
+                                        onClick={() => { setShowDeleteModal(true); setIsMenuOpen(false); }}
+                                        className="flex items-center gap-3 w-full p-3 rounded-2xl hover:bg-rose-50 text-rose-600 transition-colors text-left group"
+                                    >
+                                        <div className="p-2 bg-rose-100/50 rounded-xl group-hover:bg-white group-hover:shadow-sm transition-all">
+                                            <HiTrash className="w-5 h-5 text-rose-500" />
+                                        </div>
+                                        <span className="font-bold text-sm">Delete Group</span>
+                                    </button>
+                                </>
+                            )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* FAB Overlay Background to capture outside clicks */}
+                <AnimatePresence>
+                    {isMenuOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[-1] bg-black/5 backdrop-blur-[2px]"
+                            onClick={() => setIsMenuOpen(false)}
+                        />
+                    )}
+                </AnimatePresence>
+
+                <button
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="w-16 h-16 bg-[#030508] text-white rounded-[2rem] shadow-xl shadow-black/20 flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-300 relative overflow-hidden group border border-gray-800"
+                >
+                    <div className="absolute inset-0 bg-gradient-to-br from-teal-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <motion.div
+                        animate={{ rotate: isMenuOpen ? 45 : 0 }}
+                        transition={{ duration: 0.3, type: "spring", stiffness: 200, damping: 15 }}
+                    >
+                        <HiPlus className="w-8 h-8" />
+                    </motion.div>
+                </button>
+            </div>
         </div>
     );
 }
