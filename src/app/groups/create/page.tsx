@@ -1,33 +1,66 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { createGroup, createInvite } from "@/lib/firestore";
+import { getFriends } from "@/lib/friendsService";
+import { User } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { HiPlus, HiX, HiUserGroup, HiArrowLeft } from "react-icons/hi";
+import { HiPlus, HiX, HiUserGroup, HiArrowLeft, HiSearch, HiUser } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function CreateGroupPage() {
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
-    const [inviteEmails, setInviteEmails] = useState<string[]>([]);
-    const [currentEmail, setCurrentEmail] = useState("");
+    const [inviteUsers, setInviteUsers] = useState<User[]>([]);
+    const [friends, setFriends] = useState<User[]>([]);
+    const [filteredFriends, setFilteredFriends] = useState<User[]>([]);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [currentSearch, setCurrentSearch] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const { user } = useAuth();
     const router = useRouter();
 
-    const handleAddEmail = () => {
-        if (currentEmail && !inviteEmails.includes(currentEmail)) {
-            setInviteEmails([...inviteEmails, currentEmail]);
-            setCurrentEmail("");
+    useEffect(() => {
+        const fetchFriends = async () => {
+            if (user) {
+                const friendList = await getFriends(user.uid);
+                setFriends(friendList);
+            }
+        };
+        fetchFriends();
+    }, [user]);
+
+    useEffect(() => {
+        if (currentSearch.trim().length > 0) {
+            const search = currentSearch.toLowerCase();
+            const filtered = friends.filter(f =>
+                (f.username?.toLowerCase().includes(search) ||
+                    f.email?.toLowerCase().includes(search) ||
+                    f.displayName?.toLowerCase().includes(search)) &&
+                !inviteUsers.some(iu => iu.uid === f.uid)
+            );
+            setFilteredFriends(filtered);
+            setShowDropdown(true);
+        } else {
+            setFilteredFriends([]);
+            setShowDropdown(false);
+        }
+    }, [currentSearch, friends, inviteUsers]);
+
+    const handleAddUser = (targetUser: User) => {
+        if (!inviteUsers.find(u => u.uid === targetUser.uid)) {
+            setInviteUsers([...inviteUsers, targetUser]);
+            setCurrentSearch("");
+            setShowDropdown(false);
         }
     };
 
-    const handleRemoveEmail = (email: string) => {
-        setInviteEmails(inviteEmails.filter(e => e !== email));
+    const handleRemoveUser = (uid: string) => {
+        setInviteUsers(inviteUsers.filter(u => u.uid !== uid));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -41,10 +74,11 @@ export default function CreateGroupPage() {
             const groupId = await createGroup(name, description, user.uid);
 
             // Create invites
-            if (inviteEmails.length > 0) {
-                await Promise.all(inviteEmails.map(email =>
-                    createInvite(groupId, email, user.uid)
-                ));
+            if (inviteUsers.length > 0) {
+                await Promise.all(inviteUsers.map(invitedUser => {
+                    const identifier = invitedUser.email || invitedUser.username || invitedUser.uid;
+                    return createInvite(groupId, identifier, user.uid);
+                }));
             }
 
             router.push(`/groups/${groupId}`);
@@ -56,7 +90,7 @@ export default function CreateGroupPage() {
     };
 
     return (
-        <div className="max-w-xl mx-auto py-10 px-4">
+        <div className="max-w-xl mx-auto pt-10 pb-20 px-4">
             <motion.button
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -114,49 +148,75 @@ export default function CreateGroupPage() {
                         </div>
 
                         <div className="space-y-4">
-                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Bring Friends</label>
-                            <div className="flex gap-3">
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Bring Friends</label>
+                                <p className="text-[10px] text-gray-400 mt-1 ml-1 italic font-medium">Find and add friends to your new circle</p>
+                            </div>
+
+                            <div className="relative group/invite">
+                                <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within/invite:text-teal-500 transition-colors z-10">
+                                    <HiSearch className="w-6 h-6" />
+                                </div>
                                 <Input
-                                    value={currentEmail}
-                                    onChange={(e) => setCurrentEmail(e.target.value)}
-                                    placeholder="friend@email.com"
-                                    type="email"
-                                    className="h-16 px-6 flex-1 font-medium rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleAddEmail();
-                                        }
-                                    }}
+                                    value={currentSearch}
+                                    onChange={(e) => setCurrentSearch(e.target.value)}
+                                    placeholder="Friend's name or username..."
+                                    className="h-16 pl-16 pr-6 w-full font-medium rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm"
+                                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                                 />
-                                <Button
-                                    type="button"
-                                    onClick={handleAddEmail}
-                                    className="h-16 w-16 p-0 rounded-2xl bg-gray-900 hover:bg-teal-600 transition-colors shadow-lg shadow-gray-100 flex items-center justify-center transform active:scale-95"
-                                >
-                                    <HiPlus className="w-8 h-8" />
-                                </Button>
+
+                                {/* Dropdown */}
+                                <AnimatePresence>
+                                    {showDropdown && filteredFriends.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 10 }}
+                                            className="absolute left-0 right-0 top-full mt-2 bg-white rounded-3xl shadow-2xl border border-gray-50 overflow-hidden z-50 max-h-60 overflow-y-auto custom-scrollbar"
+                                        >
+                                            {filteredFriends.map((f) => (
+                                                <button
+                                                    key={f.uid}
+                                                    type="button"
+                                                    onClick={() => handleAddUser(f)}
+                                                    className="w-full flex items-center gap-4 p-4 hover:bg-teal-50 transition-colors text-left group/item"
+                                                >
+                                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 group-hover/item:bg-teal-600 group-hover/item:text-white transition-all font-black">
+                                                        {f.displayName?.charAt(0) || f.username?.charAt(0) || <HiUser />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-gray-900 leading-tight">{f.displayName || f.username}</p>
+                                                        <p className="text-[10px] text-gray-500 font-medium">@{f.username}</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
 
                             <AnimatePresence>
-                                {inviteEmails.length > 0 && (
+                                {inviteUsers.length > 0 && (
                                     <div className="flex flex-wrap gap-2 pt-2">
-                                        {inviteEmails.map((email, idx) => (
+                                        {inviteUsers.map((invitedUser) => (
                                             <motion.div
-                                                key={email}
+                                                key={invitedUser.uid}
                                                 initial={{ opacity: 0, scale: 0.8 }}
                                                 animate={{ opacity: 1, scale: 1 }}
                                                 exit={{ opacity: 0, scale: 0.8 }}
-                                                className="bg-teal-50 text-teal-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border border-teal-100"
+                                                className="bg-teal-50 text-teal-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border border-teal-100 group/chip"
                                             >
-                                                <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-[10px]">
-                                                    {email.charAt(0).toUpperCase()}
+                                                <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-[10px] shadow-sm">
+                                                    {(invitedUser.displayName || invitedUser.username || "U").charAt(0).toUpperCase()}
                                                 </div>
-                                                {email}
+                                                <div className="flex flex-col">
+                                                    <span>{invitedUser.displayName || invitedUser.username}</span>
+                                                    <span className="text-[8px] opacity-70">@{invitedUser.username}</span>
+                                                </div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleRemoveEmail(email)}
-                                                    className="p-1 hover:bg-teal-100 rounded-lg transition-colors"
+                                                    onClick={() => handleRemoveUser(invitedUser.uid)}
+                                                    className="p-1 hover:bg-teal-100 rounded-lg transition-colors ml-1"
                                                 >
                                                     <HiX className="w-4 h-4" />
                                                 </button>

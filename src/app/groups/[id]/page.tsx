@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense } from "@/lib/firestore";
@@ -13,7 +14,7 @@ import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { HiHome, HiUserAdd, HiPlus, HiCurrencyDollar, HiTrash, HiMail, HiDownload } from "react-icons/hi";
+import { HiHome, HiUserAdd, HiPlus, HiCurrencyDollar, HiTrash, HiMail, HiDownload, HiArrowLeft } from "react-icons/hi";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
 
 const StatCard = ({ label, value, icon, colorClass, delay = 0 }: { label: string, value: string, icon: any, colorClass: string, delay?: number }) => (
@@ -36,6 +37,7 @@ const StatCard = ({ label, value, icon, colorClass, delay = 0 }: { label: string
 );
 
 export default function GroupDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+    const router = useRouter();
     const { id } = use(params);
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -131,11 +133,20 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     if (!group) return <div className="p-4">Group not found</div>;
 
     return (
-        <div className="space-y-10 max-w-7xl mx-auto pb-12">
+        <div className="space-y-10 max-w-7xl mx-auto pb-12 pt-16 px-4">
             {/* Header & Stats */}
             <div className="space-y-6">
                 <div className="flex flex-col md:flex-row justify-between items-start gap-6">
                     <div>
+                        <motion.button
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            onClick={() => router.push('/groups')}
+                            className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-4 transition-colors group"
+                        >
+                            <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                            Return to Circles
+                        </motion.button>
                         <motion.h1
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -449,13 +460,20 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                         ) : (
                             <div className="space-y-4">
                                 {balances.map((balance, idx) => (
-                                    <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:bg-white hover:shadow-md transition-all">
+                                    <Link
+                                        key={idx}
+                                        href={`/groups/${id}/settle?payer=${balance.from}&recipient=${balance.to}&amount=${balance.amount}`}
+                                        className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group/item hover:bg-white hover:border-teal-300 hover:shadow-md transition-all block"
+                                    >
                                         <div className="flex flex-col gap-1 min-w-0">
-                                            <span className="text-sm font-bold text-gray-900 truncate">{getUserName(balance.from)}</span>
+                                            <span className="text-sm font-bold text-gray-900 group-hover/item:text-teal-600 transition-colors truncate">{getUserName(balance.from)}</span>
                                             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">payer → {getUserName(balance.to)}</span>
                                         </div>
-                                        <span className="text-lg font-black text-teal-600">₹{balance.amount.toLocaleString()}</span>
-                                    </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-lg font-black text-teal-600">₹{balance.amount.toLocaleString()}</span>
+                                            <HiArrowLeft className="w-4 h-4 text-teal-400 rotate-180 group-hover/item:translate-x-1 transition-transform" />
+                                        </div>
+                                    </Link>
                                 ))}
                             </div>
                         )}

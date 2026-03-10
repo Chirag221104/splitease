@@ -220,14 +220,14 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     const totalAmountNum = parseFloat(amount) || 0;
 
     return (
-        <div className="max-w-6xl mx-auto px-4 pb-20">
+        <div className="max-w-6xl mx-auto pt-10 px-4 pb-20">
             <header className="mb-10 flex items-center justify-between">
                 <div>
                     <motion.button
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         onClick={() => router.back()}
-                        className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-semibold uppercase tracking-wider text-[11px] mb-4 transition-colors group"
+                        className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-6 transition-colors group"
                     >
                         <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
                         Back to Group

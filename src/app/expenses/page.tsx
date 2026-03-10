@@ -57,7 +57,7 @@ export default function ExpensesPage() {
     );
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 pb-12">
+        <div className="max-w-3xl mx-auto space-y-12 pb-12 pt-8">
             <header>
                 <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">All Expenses</h1>
                 <p className="text-gray-500 mt-1">A unified history of everything you've shared</p>

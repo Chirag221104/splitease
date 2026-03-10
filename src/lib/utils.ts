@@ -2,8 +2,8 @@ import { User } from "@/types";
 
 export const getDisplayName = (user: User | undefined, fallback: string = "Unknown User"): string => {
     if (!user) return fallback;
-    if (user.username) return user.username;
     if (user.displayName) return user.displayName;
+    if (user.username) return user.username;
     if (user.email) return user.email;
     return fallback;
 };

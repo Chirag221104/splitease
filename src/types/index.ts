@@ -6,6 +6,11 @@ export interface User {
     photoURL: string | null;
     friends?: string[]; // Array of User UIDs for fast querying
     createdAt?: number;
+    notificationSettings?: {
+        expenseAdded: boolean;
+        groupInvite: boolean;
+        settlementReceived: boolean;
+    };
 }
 
 export interface Group {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getFriends, getPendingRequests, respondToFriendRequest, removeFriend } from "@/lib/friendsService";
 import { User, FriendRequest } from "@/types";
@@ -8,7 +9,7 @@ import { db } from "@/lib/firebase";
 import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import { Button } from "@/components/ui/Button";
 import { InviteFriendModal } from "@/components/friends/InviteFriendModal";
-import { HiUsers, HiMailOpen, HiPlus, HiOutlineTrash, HiCheck, HiX, HiCursorClick } from "react-icons/hi";
+import { HiUsers, HiMailOpen, HiPlus, HiOutlineTrash, HiCheck, HiX, HiCursorClick, HiArrowLeft } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/context/ToastContext";
 
@@ -16,6 +17,7 @@ type Tab = "friends" | "received" | "sent";
 
 export default function FriendsPage() {
     const { user } = useAuth();
+    const router = useRouter();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<Tab>("friends");
     const [friends, setFriends] = useState<User[]>([]);
@@ -47,12 +49,10 @@ export default function FriendsPage() {
         setLoading(true);
         fetchData().then(() => setLoading(false));
 
-        // 1. Listen to user document for friends array changes
         const userSub = onSnapshot(doc(db, "users", user.uid), () => {
             fetchData();
         });
 
-        // 2. Listen to incoming friendRequests
         const incomingSub = onSnapshot(
             query(
                 collection(db, "friendRequests"),
@@ -64,7 +64,6 @@ export default function FriendsPage() {
             }
         );
 
-        // 3. Listen to outgoing friendRequests
         const outgoingSub = onSnapshot(
             query(
                 collection(db, "friendRequests"),
@@ -89,7 +88,7 @@ export default function FriendsPage() {
         try {
             await respondToFriendRequest(requestId, user.uid, action);
             showToast(`Request ${action}`, action === "accepted" ? "success" : "info");
-            fetchData(); // Refresh all
+            fetchData();
         } catch (error: any) {
             showToast(error.message || "Action failed", "error");
         } finally {
@@ -120,17 +119,26 @@ export default function FriendsPage() {
             </div>
         );
     }
-
     return (
-        <div className="max-w-4xl mx-auto space-y-8 pb-12">
-            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+        <div className="max-w-4xl mx-auto pt-10 pb-20 px-4">
+            <motion.button
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                onClick={() => router.back()}
+                className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-10 transition-colors group"
+            >
+                <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                Back to Network
+            </motion.button>
+
+            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-10">
                 <div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">Your Network</h1>
+                    <h1 className="text-4xl font-black text-gray-900 tracking-tight italic">Your <span className="text-teal-600 not-italic">Network</span></h1>
                     <p className="text-gray-500 mt-1 font-medium">Manage your inner circle and pending invites</p>
                 </div>
                 <Button
                     onClick={() => setIsInviteModalOpen(true)}
-                    className="rounded-2xl h-14 px-8 font-black shadow-xl shadow-teal-100/50"
+                    className="rounded-2xl h-14 px-8 font-black shadow-xl shadow-teal-100/50 w-full sm:w-auto"
                 >
                     <HiPlus className="w-5 h-5 mr-2" />
                     Invite Friend
@@ -138,7 +146,7 @@ export default function FriendsPage() {
             </header>
 
             {/* Premium 3-Tab Selector */}
-            <div className="bg-gray-100 p-1.5 rounded-[2rem] flex items-center gap-1.5 shadow-inner">
+            <div className="bg-gray-100 p-1.5 rounded-[2rem] flex flex-wrap sm:flex-nowrap items-center gap-1.5 shadow-inner">
                 {[
                     { id: "friends", label: "Friends", count: friends.length, icon: HiUsers },
                     { id: "received", label: "Requested", count: incoming.length, icon: HiMailOpen },
@@ -147,13 +155,13 @@ export default function FriendsPage() {
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as Tab)}
-                        className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-[1.75rem] font-black tracking-tight transition-all relative overflow-hidden ${activeTab === tab.id
+                        className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 sm:gap-3 py-3 sm:py-4 rounded-[1.75rem] font-black tracking-tight transition-all relative overflow-hidden ${activeTab === tab.id
                             ? "bg-white text-teal-600 shadow-md transform scale-[1.02]"
                             : "text-gray-500 hover:text-gray-900 hover:bg-gray-200/50"
                             }`}
                     >
-                        <tab.icon className="w-5 h-5" />
-                        {tab.label}
+                        <tab.icon className="w-4 h-4 sm:w-5 h-5" />
+                        <span className="text-xs sm:text-base">{tab.label}</span>
                         {tab.count > 0 && (
                             <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === tab.id ? "bg-teal-100 text-teal-700" : "bg-gray-200 text-gray-600"
                                 }`}>

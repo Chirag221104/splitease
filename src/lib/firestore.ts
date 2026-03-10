@@ -79,37 +79,51 @@ export const deleteGroup = async (groupId: string, userId: string) => {
         throw new Error("Only the group owner can delete this group");
     }
 
-    // Delete all expenses associated with this group
-    const expensesQuery = query(collection(db, "expenses"), where("groupId", "==", groupId));
-    const expensesSnapshot = await getDocs(expensesQuery);
-    const expenseDeletePromises = expensesSnapshot.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(expenseDeletePromises);
+    try {
+        // Delete all expenses associated with this group that this user created/paid
+        // We filter by userId to satisfy security rules
+        const expensesQuery = query(
+            collection(db, "expenses"),
+            where("groupId", "==", groupId)
+        );
+        const expensesSnapshot = await getDocs(expensesQuery);
+        // We filter manually or ensure the query matches user permissions
+        const expenseDeletePromises = expensesSnapshot.docs
+            .filter(doc => doc.data().createdBy === userId || doc.data().paidBy === userId)
+            .map(doc => deleteDoc(doc.ref));
+        await Promise.all(expenseDeletePromises);
 
-    // Delete all settlements associated with this group
-    const settlementsQuery = query(collection(db, "settlements"), where("groupId", "==", groupId));
-    const settlementsSnapshot = await getDocs(settlementsQuery);
-    const settlementDeletePromises = settlementsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(settlementDeletePromises);
+        // Delete all settlements associated with this group
+        const settlementsQuery = query(collection(db, "settlements"), where("groupId", "==", groupId));
+        const settlementsSnapshot = await getDocs(settlementsQuery);
+        const settlementDeletePromises = settlementsSnapshot.docs
+            .filter(doc => doc.data().fromUser === userId || doc.data().toUser === userId)
+            .map(doc => deleteDoc(doc.ref));
+        await Promise.all(settlementDeletePromises);
 
-    // Delete all activities associated with this group
-    const activitiesQuery = query(collection(db, "activities"), where("groupId", "==", groupId));
-    const activitiesSnapshot = await getDocs(activitiesQuery);
-    const activityDeletePromises = activitiesSnapshot.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(activityDeletePromises);
+        // Delete all activities
+        const activitiesQuery = query(collection(db, "activities"), where("groupId", "==", groupId));
+        const activitiesSnapshot = await getDocs(activitiesQuery);
+        const activityDeletePromises = activitiesSnapshot.docs
+            .filter(doc => doc.data().userId === userId)
+            .map(doc => deleteDoc(doc.ref));
+        await Promise.all(activityDeletePromises);
 
-    // Delete all invites associated with this group
-    const invitesQuery = query(collection(db, "invites"), where("groupId", "==", groupId));
-    const invitesSnapshot = await getDocs(invitesQuery);
-    const inviteDeletePromises = invitesSnapshot.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(inviteDeletePromises);
+        // Delete all invites
+        const invitesQuery = query(collection(db, "invites"), where("groupId", "==", groupId));
+        const invitesSnapshot = await getDocs(invitesQuery);
+        const inviteDeletePromises = invitesSnapshot.docs
+            .filter(doc => doc.data().invitedBy === userId)
+            .map(doc => deleteDoc(doc.ref));
+        await Promise.all(inviteDeletePromises);
+    } catch (err) {
+        console.warn("Some sub-documents could not be deleted due to permissions, proceeding with group deletion:", err);
+    }
 
-    // Remove group from all members' groups arrays
-    const memberUpdatePromises = groupData.members.map((memberId: string) =>
-        updateDoc(doc(db, "users", memberId), {
-            groups: arrayRemove(groupId)
-        })
-    );
-    await Promise.all(memberUpdatePromises);
+    // Only remove group from current user's profile to avoid permission issues
+    await updateDoc(doc(db, "users", userId), {
+        groups: arrayRemove(groupId)
+    });
 
     // Finally, delete the group document
     await deleteDoc(doc(db, "groups", groupId));
@@ -343,6 +357,13 @@ export const updateUserUsername = async (uid: string, username: string): Promise
 
     await updateDoc(doc(db, "users", uid), {
         username: username.toLowerCase()
+    });
+};
+
+export const updateUserProfile = async (uid: string, data: Partial<User>): Promise<void> => {
+    await updateDoc(doc(db, "users", uid), {
+        ...data,
+        updatedAt: serverTimestamp()
     });
 };
 

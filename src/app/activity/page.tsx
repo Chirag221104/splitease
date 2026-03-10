@@ -122,7 +122,7 @@ export default function ActivityPage() {
     const groupedActivities = groupActivitiesByDate(activities);
 
     return (
-        <div className="max-w-3xl mx-auto space-y-10 pb-12">
+        <div className="max-w-2xl mx-auto space-y-8 pb-12 pt-16 overflow-hidden">
             <header>
                 <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Recent Activity</h1>
                 <p className="text-gray-500 mt-1">Stay updated with your shared expenses</p>

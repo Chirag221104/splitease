@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getUserGroups } from "@/lib/firestore";
 import { Group } from "@/types";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { HiPlus, HiUserGroup } from "react-icons/hi";
+import { HiPlus, HiUserGroup, HiArrowLeft } from "react-icons/hi";
 
 import { motion } from "framer-motion";
 
@@ -31,6 +32,7 @@ const GroupAvatar = ({ name }: { name: string }) => {
 
 export default function GroupsPage() {
     const { user } = useAuth();
+    const router = useRouter();
     const [groups, setGroups] = useState<Group[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -57,7 +59,17 @@ export default function GroupsPage() {
     );
 
     return (
-        <div className="space-y-8 max-w-5xl mx-auto pb-12">
+        <div className="space-y-8 max-w-5xl mx-auto pb-12 px-4">
+            <motion.button
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mt-8 mb-8 transition-colors group"
+            >
+                <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                Back to Dashboard
+            </motion.button>
+
             <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">My Groups</h1>

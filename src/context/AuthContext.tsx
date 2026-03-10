@@ -81,10 +81,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                photoURL: firebaseUser.photoURL,
+                displayName: firestoreData.displayName || firebaseUser.displayName,
+                photoURL: firestoreData.photoURL || firebaseUser.photoURL,
                 username: firestoreData.username,
                 createdAt: firestoreData.createdAt,
+                notificationSettings: firestoreData.notificationSettings,
             };
         } catch (error) {
             console.error("Error fetching user data from Firestore:", error);

@@ -1,31 +1,36 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, use, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getGroupDetails, getUsersByIds, getGroupExpenses, getGroupSettlements, recordSettlement } from "@/lib/firestore";
 import { calculateGroupBalances } from "@/lib/calculations";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, Group } from "@/types";
+import { motion } from "framer-motion";
 import { HiArrowLeft, HiUser } from "react-icons/hi";
-import { getDisplayName } from "@/lib/utils";
 
-export default function SettleUpPage({ params }: { params: Promise<{ id: string }> }) {
+function SettleUpForm({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
-    const { user } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const { user } = useAuth();
 
     const [group, setGroup] = useState<Group | null>(null);
     const [members, setMembers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-
-    // Form state
     const [payerId, setPayerId] = useState("");
     const [recipientId, setRecipientId] = useState("");
     const [amount, setAmount] = useState("");
-    const [suggestedPayments, setSuggestedPayments] = useState<{ to: string; amount: number }[]>([]);
+    const [suggestedPayments, setSuggestedPayments] = useState<{ to: string, amount: number }[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+
+    const getUserName = (uid: string) => {
+        const member = members.find(m => m.uid === uid);
+        if (member?.uid === user?.uid) return "You";
+        return member?.displayName || member?.email?.split('@')[0] || "Unknown";
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -37,32 +42,29 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
                 if (groupData) {
                     const membersData = await getUsersByIds(groupData.members);
                     setMembers(membersData);
-                    setPayerId(user.uid); // Default to current user paying
 
-                    // Calculate balances to suggest payments
+                    // Check URL search params first
+                    const urlPayer = searchParams.get('payer');
+                    const urlRecipient = searchParams.get('recipient');
+                    const urlAmount = searchParams.get('amount');
+
+                    if (urlPayer) setPayerId(urlPayer);
+                    else setPayerId(user.uid);
+
+                    if (urlRecipient) setRecipientId(urlRecipient);
+                    if (urlAmount) setAmount(urlAmount);
+
+                    // Calculate balances for suggestions
                     const expenses = await getGroupExpenses(id);
                     const settlements = await getGroupSettlements(id);
-                    const balances = calculateGroupBalances(expenses, settlements, groupData.members);
-
-                    // Simple logic to find who the user owes
-                    // This is a simplified view; a full debt simplification graph is more complex
-                    // For now, we just show if the user has a negative balance, they probably owe someone with a positive balance.
-                    // A better approach for "Who do I owe?" specifically requires the pairwise debt logic we used in the group page.
-
-                    // Let's replicate the pairwise logic briefly to find direct debts
-                    const myDebts: { to: string; amount: number }[] = [];
                     const memberBalances: Record<string, Record<string, number>> = {};
 
                     expenses.forEach(expense => {
-                        // Handle multi-contributor
                         if (expense.contributors) {
-                            Object.entries(expense.contributors).forEach(([pId, _]) => {
-                                if (!memberBalances[pId]) memberBalances[pId] = {};
-                            });
                             expense.splits.forEach(split => {
                                 Object.entries(expense.contributors!).forEach(([pId, contributed]) => {
-                                    if (split.userId !== pId && contributed > 0) {
-                                        const share = (contributed / expense.amount) * split.amount;
+                                    if (split.userId !== pId && (contributed as number) > 0) {
+                                        const share = ((contributed as number) / expense.amount) * split.amount;
                                         if (!memberBalances[split.userId]) memberBalances[split.userId] = {};
                                         if (!memberBalances[split.userId][pId]) memberBalances[split.userId][pId] = 0;
                                         memberBalances[split.userId][pId] += share;
@@ -81,28 +83,25 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
                         }
                     });
 
-                    // Subtract settlements
                     settlements.forEach(s => {
                         if (!memberBalances[s.fromUser]) memberBalances[s.fromUser] = {};
                         if (!memberBalances[s.fromUser][s.toUser]) memberBalances[s.fromUser][s.toUser] = 0;
                         memberBalances[s.fromUser][s.toUser] -= s.amount;
                     });
 
-                    // Find what I owe
+                    const myDebts: { to: string; amount: number }[] = [];
                     if (memberBalances[user.uid]) {
                         Object.entries(memberBalances[user.uid]).forEach(([toId, amt]) => {
-                            if (amt > 0.01) {
-                                myDebts.push({ to: toId, amount: amt });
-                            }
+                            if (amt > 0.01) myDebts.push({ to: toId, amount: amt });
                         });
                     }
                     setSuggestedPayments(myDebts);
 
-                    // Default recipient to the first person I owe, or just the first other member
-                    if (myDebts.length > 0) {
+                    // Only set defaults if categories weren't in URL
+                    if (!urlRecipient && myDebts.length > 0) {
                         setRecipientId(myDebts[0].to);
-                        setAmount(myDebts[0].amount.toFixed(2));
-                    } else {
+                        if (!urlAmount) setAmount(myDebts[0].amount.toFixed(2));
+                    } else if (!urlRecipient) {
                         const firstOther = membersData.find(m => m.uid !== user.uid);
                         if (firstOther) setRecipientId(firstOther.uid);
                     }
@@ -114,7 +113,7 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
             }
         };
         fetchData();
-    }, [id, user]);
+    }, [id, user, searchParams]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -127,8 +126,8 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
                 fromUser: payerId,
                 toUser: recipientId,
                 amount: parseFloat(amount),
-                date: Date.now() // This will be overwritten by serverTimestamp in firestore.ts but good for type safety if needed
-            } as any); // Cast to any because firestore.ts handles the date conversion
+                date: Date.now()
+            } as any);
 
             router.push(`/groups/${id}`);
         } catch (error) {
@@ -139,99 +138,153 @@ export default function SettleUpPage({ params }: { params: Promise<{ id: string 
         }
     };
 
-    const getUserName = (uid: string) => {
-        const member = members.find(m => m.uid === uid);
-        if (!member) return "Unknown";
-        return member.uid === user?.uid ? "You" : getDisplayName(member);
-    };
+    if (loading) return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+            <div className="w-12 h-12 border-4 border-teal-100 border-t-teal-600 rounded-full animate-spin"></div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Loading Settle Up</p>
+        </div>
+    );
 
-    if (loading) return <div className="p-8 text-center">Loading...</div>;
     if (!group) return <div className="p-8 text-center">Group not found</div>;
 
     return (
-        <div className="max-w-md mx-auto">
-            <Button variant="ghost" onClick={() => router.back()} className="mb-6 pl-0 hover:bg-transparent hover:text-teal-600">
-                <HiArrowLeft className="w-5 h-5 mr-2" />
+        <div className="max-w-md mx-auto pt-10 pb-20 px-4">
+            <motion.button
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                onClick={() => router.back()}
+                className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-10 transition-colors group"
+            >
+                <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
                 Back to Group
-            </Button>
+            </motion.button>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h1 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                    <HiUser className="text-teal-600" />
-                    Settle Up
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-teal-50 rounded-bl-full opacity-20 -mr-10 -mt-10"></div>
+
+                <h1 className="text-3xl font-black text-gray-900 mb-8 flex items-center gap-3 italic relative z-10">
+                    <div className="w-10 h-10 bg-teal-50 rounded-xl flex items-center justify-center">
+                        <HiUser className="text-teal-600 w-6 h-6 not-italic" />
+                    </div>
+                    Settle <span className="text-teal-600 not-italic">Up</span>
                 </h1>
 
                 {suggestedPayments.length > 0 && (
-                    <div className="mb-6 bg-teal-50 p-4 rounded-lg border border-teal-100">
-                        <h3 className="text-sm font-medium text-teal-800 mb-2">Suggested Payments</h3>
-                        <div className="space-y-1">
+                    <div className="mb-10 bg-gray-50/50 p-6 rounded-3xl border border-gray-100 relative z-10">
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Suggested for you</h3>
+                        <div className="space-y-3">
                             {suggestedPayments.map(payment => (
-                                <div key={payment.to} className="text-sm text-teal-700 flex justify-between cursor-pointer hover:bg-teal-100 p-1 rounded"
+                                <motion.div
+                                    key={payment.to}
+                                    whileHover={{ x: 4 }}
+                                    className="text-sm bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center cursor-pointer hover:border-teal-300 hover:shadow-md transition-all group"
                                     onClick={() => {
+                                        setPayerId(user?.uid || "");
                                         setRecipientId(payment.to);
                                         setAmount(payment.amount.toFixed(2));
                                     }}>
-                                    <span>To {getUserName(payment.to)}</span>
-                                    <span className="font-bold">₹{payment.amount.toFixed(2)}</span>
-                                </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold text-xs uppercase">
+                                            {getUserName(payment.to).charAt(0)}
+                                        </div>
+                                        <span className="font-bold text-gray-700 group-hover:text-teal-600 transition-colors">Pay {getUserName(payment.to)}</span>
+                                    </div>
+                                    <span className="font-black text-teal-600">₹{payment.amount.toFixed(2)}</span>
+                                </motion.div>
                             ))}
                         </div>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Paying</label>
-                        <select
-                            value={payerId}
-                            onChange={(e) => setPayerId(e.target.value)}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-teal-500"
-                        >
-                            {members.map(member => (
-                                <option key={member.uid} value={member.uid}>
-                                    {getUserName(member.uid)}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="flex justify-center py-2">
-                        <span className="text-gray-400">➜</span>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">To Recipient</label>
-                        <select
-                            value={recipientId}
-                            onChange={(e) => setRecipientId(e.target.value)}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-teal-500"
-                        >
-                            {members
-                                .filter(m => m.uid !== payerId)
-                                .map(member => (
+                <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Paying Member</label>
+                        <div className="relative">
+                            <select
+                                value={payerId}
+                                onChange={(e) => setPayerId(e.target.value)}
+                                className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-6 font-bold text-gray-900 focus:bg-white focus:border-teal-500 transition-all appearance-none cursor-pointer"
+                            >
+                                {members.map(member => (
                                     <option key={member.uid} value={member.uid}>
                                         {getUserName(member.uid)}
                                     </option>
                                 ))}
-                        </select>
+                            </select>
+                            <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <span className="text-xs font-black uppercase tracking-widest">Change</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <Input
-                        label="Amount (₹)"
-                        type="number"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="0.00"
-                        min="0"
-                        step="0.01"
-                        required
-                    />
+                    <div className="flex justify-center -my-4 relative">
+                        <div className="w-10 h-10 bg-white border-2 border-gray-50 rounded-full flex items-center justify-center text-teal-500 shadow-sm z-10">
+                            <span className="text-lg font-black italic">to</span>
+                        </div>
+                        <div className="absolute top-1/2 left-0 w-full h-[2px] bg-gray-50 -translate-y-1/2"></div>
+                    </div>
 
-                    <Button type="submit" className="w-full mt-4" isLoading={submitting}>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Recipient</label>
+                        <div className="relative">
+                            <select
+                                value={recipientId}
+                                onChange={(e) => setRecipientId(e.target.value)}
+                                className="w-full h-14 rounded-2xl border-2 border-gray-50 bg-gray-50 px-6 font-bold text-gray-900 focus:bg-white focus:border-teal-500 transition-all appearance-none cursor-pointer"
+                            >
+                                {members
+                                    .filter(m => m.uid !== payerId)
+                                    .map(member => (
+                                        <option key={member.uid} value={member.uid}>
+                                            {getUserName(member.uid)}
+                                        </option>
+                                    ))}
+                            </select>
+                            <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <span className="text-xs font-black uppercase tracking-widest">Change</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Amount (₹)</label>
+                        <div className="relative">
+                            <span className="absolute left-6 top-1/2 -translate-y-1/2 text-xl font-black text-teal-600 italic">₹</span>
+                            <Input
+                                type="number"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                placeholder="0.00"
+                                min="0"
+                                step="0.01"
+                                className="h-16 pl-12 pr-6 text-2xl font-black rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <Button
+                        type="submit"
+                        className="w-full py-8 rounded-2xl text-lg font-black uppercase tracking-widest shadow-xl shadow-teal-100 hover:shadow-2xl transition-all"
+                        isLoading={submitting}
+                    >
                         Record Payment
                     </Button>
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function SettleUpPage(props: any) {
+    return (
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+                <div className="w-12 h-12 border-4 border-teal-100 border-t-teal-600 rounded-full animate-spin"></div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Loading Settle Up</p>
+            </div>
+        }>
+            <SettleUpForm {...props} />
+        </Suspense>
     );
 }

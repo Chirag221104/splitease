@@ -112,7 +112,7 @@ export default function DashboardPage() {
                     animate={{ opacity: 1, x: 0 }}
                 >
                     <h1 className="text-4xl font-black text-gray-900 tracking-tight italic">
-                        Skyline <span className="text-teal-600 text-2xl not-italic font-black ml-1">v.1</span>
+                        SplitEase
                     </h1>
                     <p className="text-gray-500 font-medium mt-1">Welcome back, {user?.displayName || "Member"}</p>
                 </motion.div>
