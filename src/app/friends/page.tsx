@@ -9,6 +9,7 @@ import { db } from "@/lib/firebase";
 import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import { Button } from "@/components/ui/Button";
 import { InviteFriendModal } from "@/components/friends/InviteFriendModal";
+import { DeleteFriendModal } from "@/components/friends/DeleteFriendModal";
 import { HiUsers, HiMailOpen, HiPlus, HiOutlineTrash, HiCheck, HiX, HiCursorClick, HiArrowLeft } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/context/ToastContext";
@@ -25,6 +26,7 @@ export default function FriendsPage() {
     const [outgoing, setOutgoing] = useState<(FriendRequest & { userData?: User })[]>([]);
     const [loading, setLoading] = useState(true);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+    const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; friendId: string | null; friendName: string }>({ isOpen: false, friendId: null, friendName: "" });
     const [processingId, setProcessingId] = useState<string | null>(null);
 
     const fetchData = async () => {
@@ -96,9 +98,15 @@ export default function FriendsPage() {
         }
     };
 
-    const handleRemoveFriend = async (friendId: string) => {
-        if (!user) return;
-        if (!confirm("Are you sure you want to remove this friend?")) return;
+    const handleRemoveFriendClick = (friendId: string, name: string) => {
+        setDeleteModalState({ isOpen: true, friendId, friendName: name });
+    };
+
+    const confirmRemoveFriend = async () => {
+        if (!user || !deleteModalState.friendId) return;
+
+        const friendId = deleteModalState.friendId;
+        setDeleteModalState(prev => ({ ...prev, isOpen: false }));
         setProcessingId(friendId);
         try {
             await removeFriend(user.uid, friendId);
@@ -108,6 +116,7 @@ export default function FriendsPage() {
             showToast(error.message || "Failed to remove friend", "error");
         } finally {
             setProcessingId(null);
+            setDeleteModalState({ isOpen: false, friendId: null, friendName: "" });
         }
     };
 
@@ -195,7 +204,7 @@ export default function FriendsPage() {
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => handleRemoveFriend(friend.uid)}
+                                            onClick={() => handleRemoveFriendClick(friend.uid, friend.displayName || friend.username || "Unknown")}
                                             className="p-3 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all"
                                             title="Unfriend"
                                         >
@@ -277,6 +286,13 @@ export default function FriendsPage() {
             <InviteFriendModal
                 isOpen={isInviteModalOpen}
                 onClose={() => setIsInviteModalOpen(false)}
+            />
+
+            <DeleteFriendModal
+                isOpen={deleteModalState.isOpen}
+                onClose={() => setDeleteModalState(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmRemoveFriend}
+                friendName={deleteModalState.friendName}
             />
         </div>
     );
