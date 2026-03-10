@@ -166,6 +166,48 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             </motion.p>
                         )}
                     </div>
+                    {/* Desktop Actions */}
+                    <div className="hidden md:flex flex-wrap gap-3 justify-end w-full md:w-auto">
+                        <Link href="/dashboard">
+                            <Button variant="outline" className="rounded-xl border-gray-100 px-4">
+                                <HiHome className="w-5 h-5 mr-1" />
+                                Dashboard
+                            </Button>
+                        </Link>
+                        <Button variant="outline" onClick={() => setShowAddMember(!showAddMember)} className="rounded-xl border-gray-100">
+                            <HiUserAdd className="w-5 h-5 mr-2" />
+                            Invite
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsExportModalOpen(true)}
+                            className="rounded-xl border-gray-100"
+                        >
+                            <HiDownload className="w-5 h-5 mr-2" />
+                            Export
+                        </Button>
+                        <Link href={`/groups/${id}/expenses/new`}>
+                            <Button className="rounded-xl shadow-lg shadow-teal-100 px-6">
+                                <HiPlus className="w-5 h-5 mr-1" />
+                                Expense
+                            </Button>
+                        </Link>
+                        <Link href={`/groups/${id}/settle`}>
+                            <Button variant="secondary" className="rounded-xl px-6">
+                                <HiCurrencyDollar className="w-5 h-5 mr-1" />
+                                Settle
+                            </Button>
+                        </Link>
+                        {user?.uid === group.createdBy && (
+                            <Button
+                                variant="outline"
+                                className="rounded-xl border-rose-100 text-rose-500 hover:bg-rose-50"
+                                onClick={() => setShowDeleteModal(true)}
+                            >
+                                <HiTrash className="w-5 h-5" />
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap gap-4">
@@ -551,7 +593,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
             />
 
             {/* Floating Action Button & Menu */}
-            < div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50 flex flex-col items-end" >
+            < div className="fixed bottom-6 right-6 z-50 flex flex-col items-end md:hidden" >
                 <AnimatePresence>
                     {isMenuOpen && (
                         <motion.div
