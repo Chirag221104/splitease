@@ -31,7 +31,21 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
     const [pairwiseLedger, setPairwiseLedger] = useState<Record<string, Record<string, number>>>({});
+    const [category, setCategory] = useState("Others");
     const [error, setError] = useState("");
+
+    const categories = [
+        { label: "Food & Dining", value: "Food", icon: "🍔" },
+        { label: "Travel", value: "Travel", icon: "✈️" },
+        { label: "Shopping", value: "Shopping", icon: "🛍️" },
+        { label: "Entertainment", value: "Entertainment", icon: "🎬" },
+        { label: "Utilities", value: "Utilities", icon: "💡" },
+        { label: "Transport", value: "Transport", icon: "🚗" },
+        { label: "Rent", value: "Rent", icon: "🏠" },
+        { label: "Medical", value: "Medical", icon: "🏥" },
+        { label: "Insurance", value: "Insurance", icon: "🛡️" },
+        { label: "Others", value: "Others", icon: "📦" }
+    ];
 
     useEffect(() => {
         const fetchGroupMembers = async () => {
@@ -186,6 +200,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                 date: new Date(date).getTime(),
                 splitType,
                 splits,
+                category,
                 createdBy: user.uid
             });
 
@@ -305,6 +320,30 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                                             required
                                         />
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Category Selection */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Category</label>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {categories.map((cat) => (
+                                        <button
+                                            key={cat.value}
+                                            type="button"
+                                            onClick={() => setCategory(cat.value)}
+                                            className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all gap-1 ${category === cat.value
+                                                ? "bg-teal-50 border-teal-500 shadow-sm"
+                                                : "bg-gray-50 border-transparent hover:bg-gray-100"
+                                                }`}
+                                        >
+                                            <span className="text-xl">{cat.icon}</span>
+                                            <span className={`text-[8px] font-black uppercase tracking-tight ${category === cat.value ? "text-teal-600" : "text-gray-400"
+                                                }`}>
+                                                {cat.value}
+                                            </span>
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 

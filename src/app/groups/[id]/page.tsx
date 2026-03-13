@@ -4,19 +4,21 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense } from "@/lib/firestore";
+import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense, updateGroup } from "@/lib/firestore";
 import { calculateGroupBalances, simplifyDebts, calculatePairwiseBalances, calculateExpenseImpact, getSuggestedSettlements } from "@/lib/calculations";
 import { getDisplayName } from "@/lib/utils";
 import { Group, Expense, Settlement, Transaction, User, Invite, Balance } from "@/types";
 import { AddMemberForm } from "@/components/groups/AddMemberForm";
 import { DeleteConfirmationModal } from "@/components/groups/DeleteConfirmationModal";
+import { EditGroupModal } from "@/components/groups/EditGroupModal";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp } from "react-icons/hi";
+import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp, HiChartBar, HiClipboardList, HiCalendar } from "react-icons/hi";
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
+import GroupAnalytics from "@/components/groups/GroupAnalytics";
 
 const StatCard = ({ label, value, icon, colorClass, delay = 0 }: { label: string, value: string, icon: any, colorClass: string, delay?: number }) => (
     <motion.div
@@ -53,9 +55,11 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [loading, setLoading] = useState(true);
     const [showAddMember, setShowAddMember] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
     const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState<"expenses" | "insights">("expenses");
 
     const fetchData = async () => {
         if (!user || !id) return;
@@ -204,13 +208,23 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             </Button>
                         </Link>
                         {user?.uid === group.createdBy && (
-                            <Button
-                                variant="outline"
-                                className="rounded-xl border-rose-100 text-rose-500 hover:bg-rose-50"
-                                onClick={() => setShowDeleteModal(true)}
-                            >
-                                <HiTrash className="w-5 h-5" />
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    className="rounded-xl border-gray-100 p-3"
+                                    onClick={() => setShowEditModal(true)}
+                                    title="Edit Circle Settings"
+                                >
+                                    <HiPencil className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="rounded-xl border-rose-100 text-rose-500 hover:bg-rose-50 p-3"
+                                    onClick={() => setShowDeleteModal(true)}
+                                >
+                                    <HiTrash className="w-5 h-5" />
+                                </Button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -246,10 +260,19 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     <StatCard
                         label="Active Expenses"
                         value={expenses.length.toString()}
-                        icon={<HiMail className="w-6 h-6" />}
+                        icon={<HiClipboardList className="w-6 h-6" />}
                         colorClass="bg-amber-50 text-amber-600"
                         delay={0.4}
                     />
+                    {group.startDate && group.endDate && (
+                        <StatCard
+                            label="Trip Duration"
+                            value={`${Math.ceil((group.endDate - group.startDate) / (1000 * 60 * 60 * 24)) + 1} Days`}
+                            icon={<HiCalendar className="w-6 h-6" />}
+                            colorClass="bg-rose-50 text-rose-600"
+                            delay={0.5}
+                        />
+                    )}
                 </div>
 
                 <AnimatePresence>
@@ -270,115 +293,143 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
                 {/* Main Content: Expenses */}
                 <div className="lg:col-span-2 space-y-8">
-                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="px-8 py-6 border-b border-gray-50 flex items-center justify-between">
-                            <h3 className="text-xl font-black text-gray-900 italic">Expense History</h3>
-                            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{expenses.length} Records</span>
-                        </div>
-                        <div className="divide-y divide-gray-50">
-                            {expenses.length === 0 ? (
-                                <div className="p-12 text-center text-gray-400 font-medium">
-                                    No expenses recorded yet.
-                                </div>
-                            ) : (
-                                expenses.map((expense, idx) => (
-                                    <motion.div
-                                        key={expense.id}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: idx * 0.05 }}
-                                        className="p-6 hover:bg-gray-50/50 transition-colors group relative"
-                                    >
-                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-6">
-                                            <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
-                                                <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[72px] shrink-0 text-center flex flex-col items-center justify-center">
-                                                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-teal-500 mb-0.5 transition-colors">
-                                                        {(() => {
-                                                            const dateVal = expense.date || expense.createdAt;
-                                                            let dateObj: Date;
-                                                            if (typeof dateVal === 'number') dateObj = new Date(dateVal);
-                                                            else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
-                                                            else dateObj = new Date();
-                                                            return format(dateObj, 'MMM');
-                                                        })()}
-                                                    </span>
-                                                    <span className="text-xl font-black text-gray-900 group-hover:text-teal-700 block leading-tight mb-0.5">
-                                                        {(() => {
-                                                            const dateVal = expense.date || expense.createdAt;
-                                                            let dateObj: Date;
-                                                            if (typeof dateVal === 'number') dateObj = new Date(dateVal);
-                                                            else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
-                                                            else dateObj = new Date();
-                                                            return format(dateObj, 'dd');
-                                                        })()}
-                                                    </span>
-                                                    <span className="text-[9px] font-bold text-gray-500 group-hover:text-teal-600 transition-colors whitespace-nowrap">
-                                                        {(() => {
-                                                            const dateVal = expense.date || expense.createdAt;
-                                                            let dateObj: Date;
-                                                            if (typeof dateVal === 'number') dateObj = new Date(dateVal);
-                                                            else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
-                                                            else dateObj = new Date();
-                                                            return format(dateObj, 'h:mm a');
-                                                        })()}
-                                                    </span>
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-lg font-bold text-gray-900 group-hover:text-teal-600 transition-colors truncate">
-                                                        {expense.description}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 font-medium mt-1">
-                                                        Paid by <span className="text-gray-900 font-bold">{(() => {
-                                                            if (expense.contributors) {
-                                                                const contributors = Object.entries(expense.contributors)
-                                                                    .filter(([_, amt]) => amt > 0)
-                                                                    .map(([uid, amt]) => `${getUserName(uid)}`)
-                                                                    .join(", ");
-                                                                return contributors || "Unknown";
-                                                            } else if (expense.paidBy) {
-                                                                return getUserName(expense.paidBy);
-                                                            } else {
-                                                                return "Unknown";
-                                                            }
-                                                        })()}</span>
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center justify-between sm:justify-end gap-6 pl-20 sm:pl-0 sm:shrink-0">
-                                                <div className="text-left sm:text-right">
-                                                    <p className="text-2xl font-black text-gray-900">₹{expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{expense.splitType}</p>
-                                                    {(() => {
-                                                        const { before, after, impact } = getBalanceAtExpense(expense.id);
-                                                        if (impact === 0 && before === after) return null;
-                                                        return (
-                                                            <div className="mt-1 flex flex-col items-start sm:items-end">
-                                                                <p className={`text-[9px] font-bold uppercase ${impact >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>
-                                                                    {impact >= 0 ? '+' : ''}₹{impact.toLocaleString()} impact
-                                                                </p>
-                                                                <p className="text-[8px] text-gray-400 font-medium">
-                                                                    ₹{before.toLocaleString()} → <span className="text-gray-600 font-bold">₹{after.toLocaleString()}</span>
-                                                                </p>
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                                <div className="flex items-center justify-end sm:shrink-0 ml-4">
-                                                    <Link
-                                                        href={`/groups/${id}/expenses/${expense.id}/edit`}
-                                                        className="p-2 bg-gray-50 hover:bg-teal-50 text-gray-400 hover:text-teal-600 rounded-xl transition-colors"
-                                                        title="Edit Expense"
-                                                    >
-                                                        <HiPencil className="w-5 h-5" />
-                                                    </Link>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                ))
-                            )}
-                        </div>
+                    {/* Tab Switcher */}
+                    <div className="flex bg-gray-100/50 p-1.5 rounded-2xl w-fit">
+                        <button
+                            onClick={() => setActiveTab("expenses")}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === "expenses"
+                                ? "bg-white text-teal-600 shadow-sm"
+                                : "text-gray-400 hover:text-gray-600"
+                                }`}
+                        >
+                            <HiClipboardList className="w-4 h-4" />
+                            Expenses
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("insights")}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === "insights"
+                                ? "bg-white text-teal-600 shadow-sm"
+                                : "text-gray-400 hover:text-gray-600"
+                                }`}
+                        >
+                            <HiChartBar className="w-4 h-4" />
+                            Visual Insights
+                        </button>
                     </div>
+
+                    {activeTab === "insights" ? (
+                        <GroupAnalytics expenses={expenses} members={Object.values(members)} group={group} />
+                    ) : (
+                        <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="px-8 py-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+                                <h3 className="text-xl font-black text-gray-900 italic">Expense History</h3>
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{expenses.length} Records</span>
+                            </div>
+                            <div className="divide-y divide-gray-50">
+                                {expenses.length === 0 ? (
+                                    <div className="p-12 text-center text-gray-400 font-medium">
+                                        No expenses recorded yet.
+                                    </div>
+                                ) : (
+                                    expenses.map((expense, idx) => (
+                                        <motion.div
+                                            key={expense.id}
+                                            initial={{ opacity: 0, x: -10 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: idx * 0.05 }}
+                                            className="p-6 hover:bg-gray-50/50 transition-colors group relative"
+                                        >
+                                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-6">
+                                                <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
+                                                    <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[72px] shrink-0 text-center flex flex-col items-center justify-center">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-teal-500 mb-0.5 transition-colors">
+                                                            {(() => {
+                                                                const dateVal = expense.date || expense.createdAt;
+                                                                let dateObj: Date;
+                                                                if (typeof dateVal === 'number') dateObj = new Date(dateVal);
+                                                                else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
+                                                                else dateObj = new Date();
+                                                                return format(dateObj, 'MMM');
+                                                            })()}
+                                                        </span>
+                                                        <span className="text-xl font-black text-gray-900 group-hover:text-teal-700 block leading-tight mb-0.5">
+                                                            {(() => {
+                                                                const dateVal = expense.date || expense.createdAt;
+                                                                let dateObj: Date;
+                                                                if (typeof dateVal === 'number') dateObj = new Date(dateVal);
+                                                                else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
+                                                                else dateObj = new Date();
+                                                                return format(dateObj, 'dd');
+                                                            })()}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold text-gray-500 group-hover:text-teal-600 transition-colors whitespace-nowrap">
+                                                            {(() => {
+                                                                const dateVal = expense.date || expense.createdAt;
+                                                                let dateObj: Date;
+                                                                if (typeof dateVal === 'number') dateObj = new Date(dateVal);
+                                                                else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
+                                                                else dateObj = new Date();
+                                                                return format(dateObj, 'h:mm a');
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-lg font-bold text-gray-900 group-hover:text-teal-600 transition-colors truncate">
+                                                            {expense.description}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 font-medium mt-1">
+                                                            Paid by <span className="text-gray-900 font-bold">{(() => {
+                                                                if (expense.contributors) {
+                                                                    const contributors = Object.entries(expense.contributors)
+                                                                        .filter(([_, amt]) => amt > 0)
+                                                                        .map(([uid, amt]) => `${getUserName(uid)}`)
+                                                                        .join(", ");
+                                                                    return contributors || "Unknown";
+                                                                } else if (expense.paidBy) {
+                                                                    return getUserName(expense.paidBy);
+                                                                } else {
+                                                                    return "Unknown";
+                                                                }
+                                                            })()}</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between sm:justify-end gap-6 pl-20 sm:pl-0 sm:shrink-0">
+                                                    <div className="text-left sm:text-right">
+                                                        <p className="text-2xl font-black text-gray-900">₹{expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{expense.splitType}</p>
+                                                        {(() => {
+                                                            const { before, after, impact } = getBalanceAtExpense(expense.id);
+                                                            if (impact === 0 && before === after) return null;
+                                                            return (
+                                                                <div className="mt-1 flex flex-col items-start sm:items-end">
+                                                                    <p className={`text-[9px] font-bold uppercase ${impact >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>
+                                                                        {impact >= 0 ? '+' : ''}₹{impact.toLocaleString()} impact
+                                                                    </p>
+                                                                    <p className="text-[8px] text-gray-400 font-medium">
+                                                                        ₹{before.toLocaleString()} → <span className="text-gray-600 font-bold">₹{after.toLocaleString()}</span>
+                                                                    </p>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    <div className="flex items-center justify-end sm:shrink-0 ml-4">
+                                                        <Link
+                                                            href={`/groups/${id}/expenses/${expense.id}/edit`}
+                                                            className="p-2 bg-gray-50 hover:bg-teal-50 text-gray-400 hover:text-teal-600 rounded-xl transition-colors"
+                                                            title="Edit Expense"
+                                                        >
+                                                            <HiPencil className="w-5 h-5" />
+                                                        </Link>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Member Spending Summary */}
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
@@ -707,7 +758,23 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                         setShowDeleteModal(false);
                     }
                 }}
-                groupName={group.name}
+                groupName={group!.name}
+            />
+
+            {/* Edit Group Modal */}
+            <EditGroupModal
+                isOpen={showEditModal}
+                onClose={() => setShowEditModal(false)}
+                group={group!}
+                onConfirm={async (updatedData) => {
+                    try {
+                        await updateGroup(id, updatedData);
+                        showToast('Circle updated!', 'success');
+                        fetchData();
+                    } catch (error: any) {
+                        showToast(error.message || 'Failed to update circle', 'error');
+                    }
+                }}
             />
 
             {/* Remove Member Modal */}
@@ -735,7 +802,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                             <h3 className="text-2xl font-black text-gray-900 mb-2">Remove Member</h3>
                             <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
-                                Are you sure you want to remove <strong className="text-gray-900">{getUserName(memberToRemove)}</strong> from {group.name}? They will lose access to all expenses and history in this circle.
+                                Are you sure you want to remove <strong className="text-gray-900">{getUserName(memberToRemove!)}</strong> from {group!.name}? They will lose access to all expenses and history in this circle.
                             </p>
 
                             <div className="flex gap-4">

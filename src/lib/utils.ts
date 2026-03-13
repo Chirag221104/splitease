@@ -4,7 +4,7 @@ export const getDisplayName = (user: User | undefined, fallback: string = "Unkno
     if (!user) return fallback;
     if (user.displayName) return user.displayName;
     if (user.username) return user.username;
-    if (user.email) return user.email;
+    if (user.email) return user.email.split('@')[0];
     return fallback;
 };
 

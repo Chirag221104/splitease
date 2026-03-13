@@ -20,6 +20,10 @@ export interface Group {
     createdBy: string;
     createdAt: number;
     members: string[]; // Array of User UIDs
+    startDate?: number; // Optional trip start date
+    endDate?: number;   // Optional trip end date
+    budgetLimit?: number;
+    budgetPeriod?: 'trip' | 'monthly';
 }
 
 export type SplitType = 'EQUAL' | 'UNEQUAL' | 'SHARES' | 'PERCENTAGE';
@@ -46,6 +50,7 @@ export interface Expense {
     createdBy: string;
     createdAt: number;
     note?: string;
+    category?: string; // e.g., Food, Travel, etc.
     isDeleted?: boolean; // Soft delete for ledger integrity
     currentVersion?: number;
 }

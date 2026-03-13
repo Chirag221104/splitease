@@ -8,12 +8,14 @@ import { getFriends } from "@/lib/friendsService";
 import { User } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { HiPlus, HiX, HiUserGroup, HiArrowLeft, HiSearch, HiUser } from "react-icons/hi";
+import { HiPlus, HiX, HiUserGroup, HiArrowLeft, HiSearch, HiUser, HiCalendar } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function CreateGroupPage() {
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
     const [inviteUsers, setInviteUsers] = useState<User[]>([]);
     const [friends, setFriends] = useState<User[]>([]);
     const [filteredFriends, setFilteredFriends] = useState<User[]>([]);
@@ -71,7 +73,9 @@ export default function CreateGroupPage() {
         setError("");
 
         try {
-            const groupId = await createGroup(name, description, user.uid);
+            const startTimestamp = startDate ? new Date(startDate).getTime() : undefined;
+            const endTimestamp = endDate ? new Date(endDate).getTime() : undefined;
+            const groupId = await createGroup(name, description, user.uid, startTimestamp, endTimestamp);
 
             // Create invites
             if (inviteUsers.length > 0) {
@@ -145,6 +149,38 @@ export default function CreateGroupPage() {
                                 placeholder="What's this circle for?"
                                 className="h-16 px-6 font-medium rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Departure (Optional)</label>
+                                <div className="relative group/date">
+                                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within/date:text-teal-500 transition-colors z-10 pointer-events-none">
+                                        <HiCalendar className="w-5 h-5" />
+                                    </div>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="h-16 pl-14 pr-6 w-full font-medium rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">Arrival (Optional)</label>
+                                <div className="relative group/date">
+                                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within/date:text-teal-500 transition-colors z-10 pointer-events-none">
+                                        <HiCalendar className="w-5 h-5" />
+                                    </div>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="h-16 pl-14 pr-6 w-full font-medium rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-500 transition-all placeholder:text-gray-300 shadow-sm outline-none"
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         <div className="space-y-4">

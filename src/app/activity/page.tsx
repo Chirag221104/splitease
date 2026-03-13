@@ -46,8 +46,13 @@ export default function ActivityPage() {
     }, [user]);
 
     const getUserName = (uid: string) => {
+        if (!uid) return "Someone";
         if (uid === user?.uid) return "You";
-        return members[uid]?.displayName || members[uid]?.email || "Unknown User";
+        const member = members[uid];
+        if (member) {
+            return member.displayName || member.username || member.email?.split('@')[0] || "User";
+        }
+        return "Member";
     };
 
     const getActivityIcon = (type: Activity['type']) => {

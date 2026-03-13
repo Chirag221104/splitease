@@ -21,13 +21,15 @@ import { User, Group, Expense, Settlement, Transaction, Invite, Activity, Expens
 import { logActivity, ActivityTypes } from "./activityService";
 
 // Groups
-export const createGroup = async (name: string, description: string, createdBy: string) => {
+export const createGroup = async (name: string, description: string, createdBy: string, startDate?: number, endDate?: number) => {
     const groupRef = await addDoc(collection(db, "groups"), {
         name,
         description,
         createdBy,
         createdAt: serverTimestamp(),
-        members: [createdBy]
+        members: [createdBy],
+        ...(startDate && { startDate }),
+        ...(endDate && { endDate })
     });
 
     // Add group to user's profile
@@ -45,6 +47,17 @@ export const createGroup = async (name: string, description: string, createdBy: 
     });
 
     return groupRef.id;
+};
+
+export const updateGroup = async (groupId: string, data: Partial<Group>) => {
+    const groupRef = doc(db, "groups", groupId);
+    const updateData: any = { ...data };
+
+    // Remove id if present
+    delete updateData.id;
+
+    await updateDoc(groupRef, updateData);
+    return true;
 };
 
 export const getUserGroups = async (userId: string) => {
