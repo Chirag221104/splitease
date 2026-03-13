@@ -32,7 +32,7 @@ const formatPaidBy = (expense: Expense, members: User[]) => {
             .map(([uid, amount]) => {
                 const member = members.find(m => m.uid === uid);
                 const name = member?.displayName || member?.email || uid;
-                return `${name} Rs.${amount.toLocaleString()}`;
+                return `${name} ₹${amount.toLocaleString()}`;
             })
             .join(", ");
     }
@@ -79,9 +79,9 @@ export const generatePDFReport = (data: ReportData) => {
         startY: 65,
         head: [['Opening Balance', 'Period Net Change', 'Closing Balance']],
         body: [[
-            `Rs.${openingBalance.toLocaleString()}`,
-            `Rs.${netChange.toLocaleString()}`,
-            `Rs.${closingBalance.toLocaleString()}`
+            `₹${openingBalance.toLocaleString()}`,
+            `₹${netChange.toLocaleString()}`,
+            `₹${closingBalance.toLocaleString()}`
         ]],
         columnStyles: {
             0: { halign: 'right' },
@@ -100,7 +100,7 @@ export const generatePDFReport = (data: ReportData) => {
         e.description,
         formatPaidBy(e, members),
         e.splitType,
-        `Rs.${e.amount.toLocaleString()}`
+        `₹${e.amount.toLocaleString()}`
     ]);
 
     autoTable(doc, {
@@ -121,7 +121,7 @@ export const generatePDFReport = (data: ReportData) => {
             format(normalizeDate(s.date), "MMM dd, yyyy"),
             members.find(m => m.uid === s.fromUser)?.displayName || "Unknown",
             members.find(m => m.uid === s.toUser)?.displayName || "Unknown",
-            `Rs.${s.amount.toLocaleString()}`
+            `₹${s.amount.toLocaleString()}`
         ]);
 
         autoTable(doc, {

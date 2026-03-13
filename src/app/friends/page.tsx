@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getFriends, getPendingRequests, respondToFriendRequest, removeFriend } from "@/lib/friendsService";
-import { User, FriendRequest } from "@/types";
+import { getPendingUserGroupInvites, acceptInvite } from "@/lib/firestore";
+import { User, FriendRequest, Invite } from "@/types";
 import { db } from "@/lib/firebase";
-import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, collection, query, where } from "firebase/firestore";
 import { Button } from "@/components/ui/Button";
 import { InviteFriendModal } from "@/components/friends/InviteFriendModal";
 import { DeleteFriendModal } from "@/components/friends/DeleteFriendModal";
-import { HiUsers, HiMailOpen, HiPlus, HiOutlineTrash, HiCheck, HiX, HiCursorClick, HiArrowLeft } from "react-icons/hi";
+import { HiUsers, HiMailOpen, HiPlus, HiOutlineTrash, HiCheck, HiX, HiCursorClick, HiArrowLeft, HiUserGroup } from "react-icons/hi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/context/ToastContext";
 
@@ -23,6 +24,7 @@ export default function FriendsPage() {
     const [activeTab, setActiveTab] = useState<Tab>("friends");
     const [friends, setFriends] = useState<User[]>([]);
     const [incoming, setIncoming] = useState<(FriendRequest & { userData?: User })[]>([]);
+    const [groupInvites, setGroupInvites] = useState<(Invite & { groupName?: string; inviterName?: string })[]>([]);
     const [outgoing, setOutgoing] = useState<(FriendRequest & { userData?: User })[]>([]);
     const [loading, setLoading] = useState(true);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -32,14 +34,42 @@ export default function FriendsPage() {
     const fetchData = async () => {
         if (!user) return;
         try {
-            const [fList, iList, oList] = await Promise.all([
+            const [fList, iList, oList, gInvitesRaw] = await Promise.all([
                 getFriends(user.uid),
                 getPendingRequests(user.uid, "incoming"),
-                getPendingRequests(user.uid, "outgoing")
+                getPendingRequests(user.uid, "outgoing"),
+                user.email ? getPendingUserGroupInvites(user.email, user.uid) : Promise.resolve([])
             ]);
+
+            // Enrich group invites
+            const enrichedInvites = await Promise.all(
+                gInvitesRaw.map(async (inv) => {
+                    let groupName = inv.groupName || "Unknown Circle";
+                    let inviterName = inv.inviterName || "Someone";
+
+                    try {
+                        // Only fetch if missing or to refresh
+                        if (!inv.groupName) {
+                            const groupDoc = await getDoc(doc(db, "groups", inv.groupId));
+                            if (groupDoc.exists()) groupName = groupDoc.data().name;
+                        }
+
+                        if (!inv.inviterName) {
+                            const inviterDoc = await getDoc(doc(db, "users", inv.invitedBy));
+                            if (inviterDoc.exists()) inviterName = inviterDoc.data().displayName || inviterDoc.data().username || "Someone";
+                        }
+                    } catch (err) {
+                        console.warn("Could not fetch extra invite details (likely group permission):", err);
+                    }
+
+                    return { ...inv, groupName, inviterName };
+                })
+            );
+
             setFriends(fList);
             setIncoming(iList);
             setOutgoing(oList);
+            setGroupInvites(enrichedInvites);
         } catch (error) {
             console.error("Error fetching friends data:", error);
         }
@@ -90,10 +120,10 @@ export default function FriendsPage() {
         try {
             await respondToFriendRequest(requestId, user.uid, action);
             showToast(`Request ${action}`, action === "accepted" ? "success" : "info");
-            fetchData();
         } catch (error: any) {
             showToast(error.message || "Action failed", "error");
         } finally {
+            fetchData();
             setProcessingId(null);
         }
     };
@@ -158,7 +188,7 @@ export default function FriendsPage() {
             <div className="bg-gray-100 p-1.5 rounded-[2rem] flex flex-wrap sm:flex-nowrap items-center gap-1.5 shadow-inner">
                 {[
                     { id: "friends", label: "Friends", count: friends.length, icon: HiUsers },
-                    { id: "received", label: "Requested", count: incoming.length, icon: HiMailOpen },
+                    { id: "received", label: "Notifications", count: incoming.length + groupInvites.length, icon: HiMailOpen },
                     { id: "sent", label: "Sent", count: outgoing.length, icon: HiCursorClick }
                 ].map(tab => (
                     <button
@@ -200,7 +230,7 @@ export default function FriendsPage() {
                                             </div>
                                             <div>
                                                 <h3 className="font-black text-gray-900 italic">@{friend.username}</h3>
-                                                <p className="text-sm text-gray-500 font-medium">{friend.displayName || friend.email}</p>
+                                                {friend.displayName && <p className="text-sm text-gray-500 font-medium">{friend.displayName}</p>}
                                             </div>
                                         </div>
                                         <button
@@ -227,7 +257,7 @@ export default function FriendsPage() {
                                             </div>
                                             <div>
                                                 <p className="font-black text-gray-900">Incoming request from <span className="text-rose-600 italic">@{req.userData?.username}</span></p>
-                                                <p className="text-xs text-gray-500 font-medium">{req.userData?.displayName || req.userData?.email}</p>
+                                                {req.userData?.displayName && <p className="text-xs text-gray-500 font-medium">{req.userData.displayName}</p>}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -247,8 +277,45 @@ export default function FriendsPage() {
                                             </button>
                                         </div>
                                     </div>
-                                )) : (
-                                    <EmptyState icon="📫" title="No incoming requests" message="When people invite you to be friends, you'll see them here." />
+                                )) : null}
+
+                                {/* Group Invites */}
+                                {groupInvites.length > 0 ? groupInvites.map(invite => (
+                                    <div key={invite.id} className="bg-white p-6 rounded-3xl border border-teal-100 shadow-sm flex items-center justify-between gap-6">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-teal-500 rounded-xl flex items-center justify-center text-lg font-black text-white">
+                                                <HiUserGroup className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <p className="font-black text-gray-900">Invite to join <span className="text-teal-600 italic">&quot;{invite.groupName}&quot;</span></p>
+                                                <p className="text-xs text-gray-500 font-medium">Invited by {invite.inviterName}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={async () => {
+                                                    setProcessingId(invite.id);
+                                                    try {
+                                                        await acceptInvite(invite.id, user!);
+                                                        showToast("You've joined the group!", "success");
+                                                        fetchData();
+                                                    } catch (err: any) {
+                                                        showToast(err.message || "Failed to join group", "error");
+                                                    } finally {
+                                                        setProcessingId(null);
+                                                    }
+                                                }}
+                                                className="h-10 px-4 bg-teal-600 text-white rounded-xl font-black text-sm flex items-center gap-2 hover:bg-teal-700 transition-colors shadow-lg shadow-teal-100"
+                                                disabled={processingId === invite.id}
+                                            >
+                                                <HiCheck /> Accept
+                                            </button>
+                                        </div>
+                                    </div>
+                                )) : null}
+
+                                {incoming.length === 0 && groupInvites.length === 0 && (
+                                    <EmptyState icon="📫" title="No new notifications" message="When people invite you to be friends or join their groups, you'll see them here." />
                                 )}
                             </div>
                         )}

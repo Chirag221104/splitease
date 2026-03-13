@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { getUserGroups, getGroupExpenses, getGroupSettlements, getUserActivities, getUsersByIds } from "@/lib/firestore";
+import { getUserGroups, getGroupExpenses, getGroupSettlements, getUserActivities, getUsersByIds, getPendingUserGroupInvites, acceptInvite } from "@/lib/firestore";
 import { calculateGroupBalances, calculateGlobalBalances } from "@/lib/calculations";
-import { Group, Activity, User } from "@/types";
+import { Group, Activity, User, Invite } from "@/types";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { HiPlus, HiCurrencyDollar, HiUserGroup, HiMail, HiCheckCircle } from "react-icons/hi";
+import { HiPlus, HiUserGroup, HiEnvelope, HiCheckCircle, HiPencil, HiTrash, HiUserMinus, HiUserPlus, HiXCircle } from "react-icons/hi2";
+import { HiCurrencyRupee } from "react-icons/hi2";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 
@@ -35,6 +36,7 @@ const StatCard = ({ label, value, subtext, icon, colorClass, delay = 0 }: { labe
 export default function DashboardPage() {
     const { user } = useAuth();
     const [groups, setGroups] = useState<Group[]>([]);
+    const [invites, setInvites] = useState<Invite[]>([]);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [members, setMembers] = useState<Record<string, User>>({});
     const [totalOwed, setTotalOwed] = useState(0);
@@ -48,6 +50,12 @@ export default function DashboardPage() {
             try {
                 const userGroups = await getUserGroups(user.uid);
                 setGroups(userGroups);
+
+                // Fetch pending invites
+                if (user.email) {
+                    const pendingInvites = await getPendingUserGroupInvites(user.email, user.uid);
+                    setInvites(pendingInvites);
+                }
 
                 const allGroupBalances = [];
                 for (const group of userGroups) {
@@ -85,16 +93,55 @@ export default function DashboardPage() {
 
     const getUserName = (uid: string) => {
         if (uid === user?.uid) return "You";
-        return members[uid]?.displayName || members[uid]?.email || "Unknown User";
+        const member = members[uid];
+        if (!member) return "Unknown User";
+        return member.displayName || (member.username ? `@${member.username}` : member.email || "Unknown User");
     };
 
     const getActivityIcon = (type: Activity['type']) => {
         const iconClasses = "w-5 h-5";
         switch (type) {
-            case 'expense': return <HiCurrencyDollar className={iconClasses} />;
-            case 'group_created': return <HiUserGroup className={iconClasses} />;
-            case 'invite_accepted': return <HiMail className={iconClasses} />;
-            case 'settle': return <HiCheckCircle className={iconClasses} />;
+            case 'expense':
+                return <HiCurrencyRupee className={iconClasses} />;
+            case 'expense_edited':
+                return <HiPencil className={iconClasses} />;
+            case 'expense_deleted':
+                return <HiTrash className={iconClasses} />;
+            case 'member_removed':
+            case 'friendship_removed':
+                return <HiUserMinus className={iconClasses} />;
+            case 'friend_request_sent':
+                return <HiUserPlus className={iconClasses} />;
+            case 'friend_request_accepted':
+                return <HiUserPlus className={iconClasses} />;
+            case 'friend_request_declined':
+                return <HiXCircle className={iconClasses} />;
+            case 'group_created':
+                return <HiUserGroup className={iconClasses} />;
+            case 'invite_accepted':
+                return <HiEnvelope className={iconClasses} />;
+            case 'settle':
+            case 'friendship_reactivated':
+                return <HiCheckCircle className={iconClasses} />;
+            default:
+                return <HiCurrencyRupee className={iconClasses} />;
+        }
+    };
+
+    const handleAcceptInvite = async (inviteId: string) => {
+        if (!user) return;
+        try {
+            await acceptInvite(inviteId, user);
+            // Refresh data
+            const [userGroups, pendingInvites] = await Promise.all([
+                getUserGroups(user.uid),
+                user.email ? getPendingUserGroupInvites(user.email, user.uid) : Promise.resolve([])
+            ]);
+            setGroups(userGroups);
+            setInvites(pendingInvites);
+        } catch (error) {
+            console.error("Error accepting invite:", error);
+            alert("Failed to accept invite. Please try again.");
         }
     };
 
@@ -134,7 +181,7 @@ export default function DashboardPage() {
                     label="You are owed"
                     value={`₹${totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                     subtext="across all your active groups"
-                    icon={<HiCurrencyDollar className="w-8 h-8" />}
+                    icon={<HiCurrencyRupee className="w-8 h-8" />}
                     colorClass="bg-teal-50 text-teal-600"
                     delay={0.1}
                 />
@@ -157,6 +204,33 @@ export default function DashboardPage() {
                             View All Groups
                         </Link>
                     </div>
+
+                    {/* Pending Invites Section - Only visible if there are invites */}
+                    {invites.length > 0 && (
+                        <div className="bg-amber-50 rounded-3xl p-6 border border-amber-100 shadow-sm mb-6">
+                            <h4 className="text-sm font-black text-amber-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <HiEnvelope className="w-5 h-5" /> Pending Invites ({invites.length})
+                            </h4>
+                            <div className="space-y-3">
+                                {invites.map((invite) => (
+                                    <div key={invite.id} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-amber-100 shadow-sm">
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-900">Invited by <span className="text-amber-600 italic">{invite.inviterName || "Someone"}</span></p>
+                                            <p className="text-xs text-gray-500 font-medium">To join <span className="font-bold text-gray-700">&quot;{invite.groupName || "a circle"}&quot;</span></p>
+                                        </div>
+                                        <Button
+                                            onClick={() => handleAcceptInvite(invite.id)}
+                                            size="sm"
+                                            className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md px-4"
+                                        >
+                                            Accept
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid gap-4">
                         {groups.length === 0 ? (
                             <div className="bg-white p-12 rounded-3xl border border-dashed border-gray-200 text-center">

@@ -4,12 +4,13 @@ import { useState, useEffect, use, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getGroupDetails, getUsersByIds, getGroupExpenses, getGroupSettlements, recordSettlement } from "@/lib/firestore";
-import { calculateGroupBalances } from "@/lib/calculations";
+import { calculateGroupBalances, simplifyDebts } from "@/lib/calculations";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, Group } from "@/types";
 import { motion } from "framer-motion";
 import { HiArrowLeft, HiUser } from "react-icons/hi";
+import { HiCurrencyRupee } from "react-icons/hi2";
 
 function SettleUpForm({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -57,44 +58,14 @@ function SettleUpForm({ params }: { params: Promise<{ id: string }> }) {
                     // Calculate balances for suggestions
                     const expenses = await getGroupExpenses(id);
                     const settlements = await getGroupSettlements(id);
-                    const memberBalances: Record<string, Record<string, number>> = {};
 
-                    expenses.forEach(expense => {
-                        if (expense.contributors) {
-                            expense.splits.forEach(split => {
-                                Object.entries(expense.contributors!).forEach(([pId, contributed]) => {
-                                    if (split.userId !== pId && (contributed as number) > 0) {
-                                        const share = ((contributed as number) / expense.amount) * split.amount;
-                                        if (!memberBalances[split.userId]) memberBalances[split.userId] = {};
-                                        if (!memberBalances[split.userId][pId]) memberBalances[split.userId][pId] = 0;
-                                        memberBalances[split.userId][pId] += share;
-                                    }
-                                });
-                            });
-                        } else if (expense.paidBy) {
-                            const pId = expense.paidBy;
-                            expense.splits.forEach(split => {
-                                if (split.userId !== pId) {
-                                    if (!memberBalances[split.userId]) memberBalances[split.userId] = {};
-                                    if (!memberBalances[split.userId][pId]) memberBalances[split.userId][pId] = 0;
-                                    memberBalances[split.userId][pId] += split.amount;
-                                }
-                            });
-                        }
-                    });
+                    const calculatedBalances = calculateGroupBalances(expenses, settlements, groupData.members);
+                    const simplified = simplifyDebts(calculatedBalances);
 
-                    settlements.forEach(s => {
-                        if (!memberBalances[s.fromUser]) memberBalances[s.fromUser] = {};
-                        if (!memberBalances[s.fromUser][s.toUser]) memberBalances[s.fromUser][s.toUser] = 0;
-                        memberBalances[s.fromUser][s.toUser] -= s.amount;
-                    });
+                    const myDebts = simplified
+                        .filter(t => t.from === user.uid)
+                        .map(t => ({ to: t.to, amount: t.amount }));
 
-                    const myDebts: { to: string; amount: number }[] = [];
-                    if (memberBalances[user.uid]) {
-                        Object.entries(memberBalances[user.uid]).forEach(([toId, amt]) => {
-                            if (amt > 0.01) myDebts.push({ to: toId, amount: amt });
-                        });
-                    }
                     setSuggestedPayments(myDebts);
 
                     // Only set defaults if categories weren't in URL

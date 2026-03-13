@@ -288,8 +288,27 @@ export const simplifyDebts = (balances: Balance): Transaction[] => {
     return transactions;
 };
 
-// Alias for better UI naming
-export const getSuggestedSettlements = simplifyDebts;
+// Alias for better UI naming (Deprecated behavior, keeping name for backward compatibility)
+export const getSuggestedSettlements = (
+    pairwiseLedger: Record<string, Record<string, number>>
+): Transaction[] => {
+    const transactions: Transaction[] = [];
+
+    // Convert the 2D ledger map into a flat list of transactions
+    Object.entries(pairwiseLedger).forEach(([debtorId, creditors]) => {
+        Object.entries(creditors).forEach(([creditorId, amount]) => {
+            if (amount > 0.01) {
+                transactions.push({
+                    from: debtorId,
+                    to: creditorId,
+                    amount: parseFloat(amount.toFixed(2))
+                });
+            }
+        });
+    });
+
+    return transactions;
+};
 
 export const calculateGlobalBalances = (allGroupBalances: Record<string, number>[], currentUserId: string) => {
     const result = { owed: 0, owe: 0 };

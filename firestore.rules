@@ -15,10 +15,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && request.auth.uid == userId;
-      // Special: allow updating friends array for accept/remove logic
+      // Special: allow updating friends array for accept/remove logic, and groups array for kicking members
       allow update: if isSignedIn() && (
         request.auth.uid == userId || 
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['groups'])
       );
     }
     
@@ -26,7 +27,16 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow create: if isSignedIn();
       allow read: if isSignedIn() && (request.auth.uid in resource.data.members);
-      allow update: if isSignedIn() && (request.auth.uid in resource.data.members);
+      allow update: if isSignedIn() && (
+        (request.auth.uid in resource.data.members) ||
+        // Allow adding self to members array (for accepting invites)
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+          request.resource.data.members.size() == resource.data.members.size() + 1 &&
+          request.auth.uid in request.resource.data.members &&
+          !(request.auth.uid in resource.data.members)
+        )
+      );
       allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
     }
 
@@ -58,13 +68,17 @@ service cloud.firestore {
       allow read: if isSignedIn(); // Filtered by userId/groupId in queries
       allow create: if isSignedIn(); 
       allow update: if isSignedIn() && (
-        resource.data.createdBy == request.auth.uid || 
-        get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid
+        // Allow any group member to edit the expense
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.members
       );
       allow delete: if false; 
       
       match /versions/{versionId} {
         allow read: if isSignedIn();
+        allow create: if isSignedIn() && (
+          // Allow any group member to save a version history record
+          request.auth.uid in get(/databases/$(database)/documents/groups/$(get(/databases/$(database)/documents/expenses/$(expenseId)).data.groupId)).data.members
+        );
       }
     }
 

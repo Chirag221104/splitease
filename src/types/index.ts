@@ -81,9 +81,11 @@ export interface Transaction {
 export interface Invite {
     id: string;
     groupId: string;
+    groupName?: string;
     email: string;
     invitedUid?: string;
     invitedBy: string;
+    inviterName?: string;
     status: 'pending' | 'accepted' | 'rejected';
     createdAt: number;
 }

@@ -8,7 +8,8 @@ import { calculatePairwiseBalances } from "@/lib/calculations";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, SplitType, Split } from "@/types";
-import { HiArrowLeft, HiCheckCircle, HiTag, HiLightningBolt, HiUserGroup, HiOutlineTemplate } from "react-icons/hi";
+import { HiArrowLeft, HiCheckCircle, HiTag, HiUserGroup, HiOutlineTemplate, HiLightningBolt } from "react-icons/hi";
+import { HiCurrencyRupee } from "react-icons/hi2";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function AddExpensePage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +19,11 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
 
     const [description, setDescription] = useState("");
     const [amount, setAmount] = useState("");
+    const [date, setDate] = useState(() => {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        return now.toISOString().slice(0, 16);
+    });
     const [contributors, setContributors] = useState<Record<string, string>>({});
     const [splitType, setSplitType] = useState<SplitType>("EQUAL");
     const [members, setMembers] = useState<User[]>([]);
@@ -177,7 +183,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                 description,
                 amount: numAmount,
                 contributors: contributorsData,
-                date: Date.now(),
+                date: new Date(date).getTime(),
                 splitType,
                 splits,
                 createdBy: user.uid
@@ -258,17 +264,31 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                         <form onSubmit={handleSubmit} className="space-y-12 relative z-10">
                             {/* 1. Basic Info */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
-                                        <HiTag className="w-3 h-3 text-teal-400" /> What's this for?
-                                    </label>
-                                    <Input
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="e.g., Round 1 Cocktails"
-                                        className="h-14 px-5 text-base font-medium rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:border-teal-400 transition-all placeholder:text-gray-300"
-                                        required
-                                    />
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                            <HiTag className="w-3 h-3 text-teal-400" /> What's this for?
+                                        </label>
+                                        <Input
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                            placeholder="e.g., Round 1 Cocktails"
+                                            className="h-14 px-5 text-base font-medium rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:border-teal-400 transition-all placeholder:text-gray-300"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">
+                                            <span className="w-3 h-3 text-teal-400 inline-block font-bold">📅</span> When?
+                                        </label>
+                                        <Input
+                                            type="datetime-local"
+                                            value={date}
+                                            onChange={(e) => setDate(e.target.value)}
+                                            className="h-14 px-5 text-base font-medium rounded-2xl border border-gray-100 bg-gray-50/50 focus:bg-white focus:border-teal-400 transition-all text-gray-700"
+                                            required
+                                        />
+                                    </div>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold uppercase tracking-wider text-gray-400 ml-1 flex items-center gap-2">

@@ -6,13 +6,16 @@ import { getUserActivities, getUsersByIds } from "@/lib/firestore";
 import { Activity, User } from "@/types";
 import { format } from "date-fns";
 import Link from "next/link";
-import { HiCurrencyDollar, HiUserGroup, HiMail, HiCheckCircle } from "react-icons/hi";
+import { HiUserGroup, HiEnvelope, HiCheckCircle, HiArrowLeft, HiPencil, HiTrash, HiUserMinus, HiUserPlus, HiXCircle } from "react-icons/hi2";
+import { HiCurrencyRupee } from "react-icons/hi2";
+import { useRouter } from "next/navigation";
 
 import { motion } from "framer-motion";
 import { isToday, isYesterday } from "date-fns";
 
 export default function ActivityPage() {
     const { user } = useAuth();
+    const router = useRouter();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [members, setMembers] = useState<Record<string, User>>({});
     const [loading, setLoading] = useState(true);
@@ -53,22 +56,55 @@ export default function ActivityPage() {
             case 'expense':
                 return (
                     <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl shadow-sm border border-teal-100/50">
-                        <HiCurrencyDollar className={iconClasses} />
+                        <HiCurrencyRupee className={iconClasses} />
+                    </div>
+                );
+            case 'expense_edited':
+                return (
+                    <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl shadow-sm border border-amber-100/50">
+                        <HiPencil className={iconClasses} />
+                    </div>
+                );
+            case 'expense_deleted':
+                return (
+                    <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl shadow-sm border border-rose-100/50">
+                        <HiTrash className={iconClasses} />
+                    </div>
+                );
+            case 'member_removed':
+            case 'friendship_removed':
+                return (
+                    <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl shadow-sm border border-rose-100/50">
+                        <HiUserMinus className={iconClasses} />
+                    </div>
+                );
+            case 'friend_request_sent':
+            case 'friend_request_accepted':
+                return (
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shadow-sm border border-blue-100/50">
+                        <HiUserPlus className={iconClasses} />
+                    </div>
+                );
+            case 'friend_request_declined':
+                return (
+                    <div className="p-3 bg-gray-50 text-gray-600 rounded-2xl shadow-sm border border-gray-100/50">
+                        <HiXCircle className={iconClasses} />
                     </div>
                 );
             case 'group_created':
                 return (
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shadow-sm border border-blue-100/50">
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shadow-sm border border-indigo-100/50">
                         <HiUserGroup className={iconClasses} />
                     </div>
                 );
             case 'invite_accepted':
                 return (
                     <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-emerald-100/50">
-                        <HiMail className={iconClasses} />
+                        <HiEnvelope className={iconClasses} />
                     </div>
                 );
             case 'settle':
+            case 'friendship_reactivated':
                 return (
                     <div className="p-3 bg-violet-50 text-violet-600 rounded-2xl shadow-sm border border-violet-100/50">
                         <HiCheckCircle className={iconClasses} />
@@ -77,7 +113,7 @@ export default function ActivityPage() {
             default:
                 return (
                     <div className="p-3 bg-gray-50 text-gray-600 rounded-2xl shadow-sm border border-gray-100/50">
-                        <HiCurrencyDollar className={iconClasses} />
+                        <HiCurrencyRupee className={iconClasses} />
                     </div>
                 );
         }
@@ -124,6 +160,15 @@ export default function ActivityPage() {
     return (
         <div className="max-w-2xl mx-auto space-y-8 pb-12 pt-16 overflow-hidden">
             <header>
+                <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    onClick={() => router.back()}
+                    className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-6 transition-colors group"
+                >
+                    <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                    Back
+                </motion.button>
                 <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Recent Activity</h1>
                 <p className="text-gray-500 mt-1">Stay updated with your shared expenses</p>
             </header>

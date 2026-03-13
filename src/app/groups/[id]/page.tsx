@@ -7,14 +7,15 @@ import { useToast } from "@/context/ToastContext";
 import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense } from "@/lib/firestore";
 import { calculateGroupBalances, simplifyDebts, calculatePairwiseBalances, calculateExpenseImpact, getSuggestedSettlements } from "@/lib/calculations";
 import { getDisplayName } from "@/lib/utils";
-import { Group, Expense, Settlement, Transaction, User, Invite } from "@/types";
+import { Group, Expense, Settlement, Transaction, User, Invite, Balance } from "@/types";
 import { AddMemberForm } from "@/components/groups/AddMemberForm";
 import { DeleteConfirmationModal } from "@/components/groups/DeleteConfirmationModal";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { HiHome, HiUserAdd, HiPlus, HiCurrencyDollar, HiTrash, HiMail, HiDownload, HiArrowLeft } from "react-icons/hi";
+import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp } from "react-icons/hi";
+import { HiCurrencyRupee } from "react-icons/hi2";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
 
 const StatCard = ({ label, value, icon, colorClass, delay = 0 }: { label: string, value: string, icon: any, colorClass: string, delay?: number }) => (
@@ -48,9 +49,11 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [members, setMembers] = useState<Record<string, User>>({});
     const [invites, setInvites] = useState<Invite[]>([]);
     const [pairwiseLedger, setPairwiseLedger] = useState<Record<string, Record<string, number>>>({});
+    const [netBalances, setNetBalances] = useState<Balance>({});
     const [loading, setLoading] = useState(true);
     const [showAddMember, setShowAddMember] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -80,11 +83,13 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 setSettlements(settlementsData);
 
                 const calculatedBalances = calculateGroupBalances(expensesData, settlementsData, groupData.members);
-                const simplified = getSuggestedSettlements(calculatedBalances);
-                setBalances(simplified);
+                setNetBalances(calculatedBalances);
 
                 const ledger = calculatePairwiseBalances(expensesData, settlementsData, groupData.members);
                 setPairwiseLedger(ledger);
+
+                const simplified = simplifyDebts(calculatedBalances);
+                setBalances(simplified);
             }
         } catch (error) {
             console.error("Error fetching group details:", error);
@@ -194,7 +199,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                         </Link>
                         <Link href={`/groups/${id}/settle`}>
                             <Button variant="secondary" className="rounded-xl px-6">
-                                <HiCurrencyDollar className="w-5 h-5 mr-1" />
+                                <HiCurrencyRupee className="w-5 h-5 mr-1" />
                                 Settle
                             </Button>
                         </Link>
@@ -214,7 +219,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     <StatCard
                         label="Total Group Spending"
                         value={`₹${expenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}`}
-                        icon={<HiCurrencyDollar className="w-6 h-6" />}
+                        icon={<HiCurrencyRupee className="w-6 h-6" />}
                         colorClass="bg-teal-50 text-teal-600"
                         delay={0.1}
                     />
@@ -224,7 +229,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             const balance = calculateGroupBalances(expenses, settlements, [user.uid])[user.uid] || 0;
                             return (balance >= 0 ? "+" : "") + "₹" + Math.abs(balance).toLocaleString();
                         })()}`}
-                        icon={<HiCurrencyDollar className="w-6 h-6" />}
+                        icon={<HiCurrencyRupee className="w-6 h-6" />}
                         colorClass={(() => {
                             const balance = calculateGroupBalances(expenses, settlements, [user.uid])[user.uid] || 0;
                             return balance >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600";
@@ -256,7 +261,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             className="bg-white p-6 rounded-3xl border border-teal-100 shadow-sm overflow-hidden"
                         >
                             <h3 className="text-lg font-bold text-gray-900 mb-4">Invite new members</h3>
-                            <AddMemberForm groupId={id} onMemberAdded={fetchData} />
+                            <AddMemberForm groupId={id} groupName={group.name} onMemberAdded={fetchData} currentMembers={group.members} />
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -286,8 +291,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                     >
                                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-6">
                                             <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
-                                                <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[64px] shrink-0 text-center">
-                                                    <span className="text-[10px] font-black uppercase text-gray-400 block mb-0.5 group-hover:text-teal-400">
+                                                <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[72px] shrink-0 text-center flex flex-col items-center justify-center">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-teal-500 mb-0.5 transition-colors">
                                                         {(() => {
                                                             const dateVal = expense.date || expense.createdAt;
                                                             let dateObj: Date;
@@ -297,7 +302,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                             return format(dateObj, 'MMM');
                                                         })()}
                                                     </span>
-                                                    <span className="text-lg font-black text-gray-900 group-hover:text-teal-700 block leading-none">
+                                                    <span className="text-xl font-black text-gray-900 group-hover:text-teal-700 block leading-tight mb-0.5">
                                                         {(() => {
                                                             const dateVal = expense.date || expense.createdAt;
                                                             let dateObj: Date;
@@ -305,6 +310,16 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                             else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
                                                             else dateObj = new Date();
                                                             return format(dateObj, 'dd');
+                                                        })()}
+                                                    </span>
+                                                    <span className="text-[9px] font-bold text-gray-500 group-hover:text-teal-600 transition-colors whitespace-nowrap">
+                                                        {(() => {
+                                                            const dateVal = expense.date || expense.createdAt;
+                                                            let dateObj: Date;
+                                                            if (typeof dateVal === 'number') dateObj = new Date(dateVal);
+                                                            else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
+                                                            else dateObj = new Date();
+                                                            return format(dateObj, 'h:mm a');
                                                         })()}
                                                     </span>
                                                 </div>
@@ -348,14 +363,15 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                         );
                                                     })()}
                                                 </div>
-                                                {group.createdBy === user?.uid && (
+                                                <div className="flex items-center justify-end sm:shrink-0 ml-4">
                                                     <Link
                                                         href={`/groups/${id}/expenses/${expense.id}/edit`}
-                                                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-2 bg-white rounded-xl shadow-sm border border-gray-100 text-teal-600 hover:text-teal-700 shrink-0"
+                                                        className="p-2 bg-gray-50 hover:bg-teal-50 text-gray-400 hover:text-teal-600 rounded-xl transition-colors"
+                                                        title="Edit Expense"
                                                     >
-                                                        Edit
+                                                        <HiPencil className="w-5 h-5" />
                                                     </Link>
-                                                )}
+                                                </div>
                                             </div>
                                         </div>
                                     </motion.div>
@@ -454,29 +470,149 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
                         <h3 className="text-xl font-black text-gray-900 mb-6 italic">Suggested Settlements</h3>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Optimized to minimize transactions</p>
                         {balances.length === 0 ? (
                             <div className="text-center py-6">
                                 <p className="text-emerald-500 font-bold mb-1 italic">Everyone is settled!</p>
                                 <p className="text-[10px] text-gray-400 font-black tracking-widest uppercase">No transactions needed</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {balances.map((balance, idx) => (
-                                    <Link
-                                        key={idx}
-                                        href={`/groups/${id}/settle?payer=${balance.from}&recipient=${balance.to}&amount=${balance.amount}`}
-                                        className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group/item hover:bg-white hover:border-teal-300 hover:shadow-md transition-all block"
-                                    >
-                                        <div className="flex flex-col gap-1 min-w-0">
-                                            <span className="text-sm font-bold text-gray-900 group-hover/item:text-teal-600 transition-colors truncate">{getUserName(balance.from)}</span>
-                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">payer → {getUserName(balance.to)}</span>
+                            <div className="space-y-6">
+                                {balances.map((balance, idx) => {
+                                    const fromBalance = netBalances[balance.from] || 0;
+                                    const toBalance = netBalances[balance.to] || 0;
+                                    const directDebt = pairwiseLedger[balance.from]?.[balance.to] || 0;
+                                    const totalUserDebt = Object.values(pairwiseLedger[user.uid] || {}).reduce((a, b) => a + b, 0);
+
+                                    // Step 2 Logic: Find connections
+                                    // If balance.amount > directDebt, it means we are routing debts from others.
+                                    // Let's find who else we owe who also owes balance.to
+                                    const redirectedFrom: { name: string, amount: number }[] = [];
+                                    if (balance.from === user.uid && balance.amount > directDebt + 0.01) {
+                                        Object.entries(pairwiseLedger[user.uid] || {}).forEach(([otherId, amt]) => {
+                                            if (otherId !== balance.to && amt > 0) {
+                                                const thatPersonOwesRecipient = pairwiseLedger[otherId]?.[balance.to] || 0;
+                                                if (thatPersonOwesRecipient > 0) {
+                                                    redirectedFrom.push({ name: getUserName(otherId), amount: Math.min(amt, thatPersonOwesRecipient) });
+                                                }
+                                            }
+                                        });
+                                    }
+
+                                    return (
+                                        <div key={idx} className="group/settle space-y-3">
+                                            <Link
+                                                href={`/groups/${id}/settle?payer=${balance.from}&recipient=${balance.to}&amount=${balance.amount}`}
+                                                className="flex items-center justify-between p-5 bg-emerald-50/30 rounded-3xl border-2 border-emerald-100/50 group-hover/settle:bg-white group-hover/settle:border-emerald-400 group-hover/settle:shadow-xl transition-all duration-300 block"
+                                            >
+                                                <div className="flex flex-col gap-1 min-w-0">
+                                                    <span className="text-sm font-black text-gray-900 group-hover/settle:text-emerald-600 transition-colors truncate">{getUserName(balance.from)}</span>
+                                                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">payer → {getUserName(balance.to)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-xl font-black text-emerald-600 italic">₹{balance.amount.toLocaleString()}</span>
+                                                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center group-hover/settle:bg-emerald-500 transition-colors">
+                                                        <HiArrowRight className="w-4 h-4 text-emerald-600 group-hover/settle:text-white transition-colors" />
+                                                    </div>
+                                                </div>
+                                            </Link>
+
+                                            {/* Collapsible Breakdown */}
+                                            <details className="group/breakdown px-2">
+                                                <summary className="list-none cursor-pointer flex items-center gap-2 text-[10px] font-black text-teal-600 uppercase tracking-widest hover:text-teal-700 transition-colors">
+                                                    <span className="group-open/breakdown:rotate-180 transition-transform"><HiChevronDown className="w-4 h-4" /></span>
+                                                    Why these amounts?
+                                                </summary>
+
+                                                <div className="mt-4 p-6 bg-gray-50/80 rounded-[2rem] border border-gray-100 space-y-6">
+                                                    <p className="text-[10px] text-gray-500 font-medium leading-relaxed italic">
+                                                        “This amount is optimized to reduce the total number of payments in the group. Your total payment stays the same, but the system redirects part of your payment through members who are owed more money.”
+                                                    </p>
+
+                                                    <div className="space-y-6">
+                                                        {/* STEP 1 */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <span className="w-5 h-5 rounded-full bg-gray-200 text-[10px] font-black flex items-center justify-center">1</span>
+                                                                <h4 className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Direct Debts</h4>
+                                                            </div>
+                                                            <div className="space-y-2 pl-7">
+                                                                {balance.from === user.uid ? (
+                                                                    Object.entries(pairwiseLedger[user.uid] || {}).map(([oid, amt]) => amt > 0 && (
+                                                                        <div key={oid} className="flex items-center justify-between text-[11px] font-bold text-rose-500">
+                                                                            <span>You → {getUserName(oid)}</span>
+                                                                            <span>₹{amt.toLocaleString()}</span>
+                                                                        </div>
+                                                                    ))
+                                                                ) : (
+                                                                    <div className="text-[11px] font-bold text-gray-500 italic"> Ledger calculation for {getUserName(balance.from)}...</div>
+                                                                )}
+                                                                <div className="pt-2 border-t border-gray-200 flex justify-between text-[10px] font-black text-gray-900 uppercase">
+                                                                    <span>Total Owed</span>
+                                                                    <span>₹{Math.abs(fromBalance).toLocaleString()}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* STEP 2 */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <span className="w-5 h-5 rounded-full bg-gray-200 text-[10px] font-black flex items-center justify-center">2</span>
+                                                                <h4 className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Group Debt Chain</h4>
+                                                            </div>
+                                                            <div className="pl-7 space-y-3">
+                                                                {redirectedFrom.length > 0 ? (
+                                                                    redirectedFrom.map((redirect, ridx) => (
+                                                                        <div key={ridx} className="flex flex-col gap-1 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
+                                                                            <div className="absolute top-0 right-0 w-1 h-full bg-teal-400 opacity-20" />
+                                                                            <div className="flex items-center justify-between text-[10px] font-bold text-gray-400">
+                                                                                <span>{redirect.name} owes {getUserName(balance.to)}</span>
+                                                                                <span>₹{redirect.amount.toLocaleString()}</span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 text-[10px] font-black text-teal-600">
+                                                                                <span>You</span>
+                                                                                <HiArrowRight className="w-3 h-3" />
+                                                                                <span>{redirect.name}</span>
+                                                                                <HiArrowRight className="w-3 h-3" />
+                                                                                <span className="bg-teal-50 px-2 py-0.5 rounded-md italic">Simplified</span>
+                                                                                <HiArrowRight className="w-3 h-3" />
+                                                                                <span>{getUserName(balance.to)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))
+                                                                ) : (
+                                                                    <div className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-gray-100 text-[10px] font-bold text-gray-500 italic">
+                                                                        <HiInformationCircle className="w-4 h-4 text-teal-400" />
+                                                                        Complex multi-person debt chain resolved.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* STEP 3 */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shadow-lg shadow-emerald-200">3</span>
+                                                                <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Optimized Settlement</h4>
+                                                            </div>
+                                                            <div className="pl-7 bg-emerald-50/50 p-4 rounded-2xl border-2 border-emerald-100 border-dashed">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[11px] font-black text-gray-900">You → {getUserName(balance.to)}</span>
+                                                                    </div>
+                                                                    <span className="text-sm font-black text-emerald-600 italic">₹{balance.amount.toLocaleString()}</span>
+                                                                </div>
+                                                                <p className="text-[8px] text-emerald-700 font-bold uppercase tracking-[0.05em] mt-2 opacity-60">
+                                                                    Final Result: Settles share of {getUserName(balance.to)}'s credit.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </details>
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-lg font-black text-teal-600">₹{balance.amount.toLocaleString()}</span>
-                                            <HiArrowLeft className="w-4 h-4 text-teal-400 rotate-180 group-hover/item:translate-x-1 transition-transform" />
-                                        </div>
-                                    </Link>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -512,20 +648,10 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                         </div>
                                         {user?.uid === group.createdBy && (
                                             <button
-                                                onClick={async () => {
-                                                    if (confirm(`Remove ${getUserName(memberId)} from the group?`)) {
-                                                        try {
-                                                            const { removeMember } = await import('@/lib/firestore');
-                                                            await removeMember(id, memberId, user.uid);
-                                                            await fetchData();
-                                                        } catch (error: any) {
-                                                            showToast(error.message || 'Failed to remove member', 'error');
-                                                        }
-                                                    }
-                                                }}
+                                                onClick={() => setMemberToRemove(memberId)}
                                                 className="opacity-0 group-hover:opacity-100 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-700 transition-all border-b border-rose-100"
                                             >
-                                                Expel
+                                                Remove
                                             </button>
                                         )}
                                     </div>
@@ -583,6 +709,65 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 }}
                 groupName={group.name}
             />
+
+            {/* Remove Member Modal */}
+            <AnimatePresence>
+                {memberToRemove && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm"
+                        onClick={() => setMemberToRemove(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            onClick={e => e.stopPropagation()}
+                            className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl overflow-hidden relative"
+                        >
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-bl-[100px] -z-10" />
+
+                            <div className="w-16 h-16 bg-rose-100/50 rounded-2xl flex items-center justify-center mb-6">
+                                <HiTrash className="w-8 h-8 text-rose-500" />
+                            </div>
+
+                            <h3 className="text-2xl font-black text-gray-900 mb-2">Remove Member</h3>
+                            <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
+                                Are you sure you want to remove <strong className="text-gray-900">{getUserName(memberToRemove)}</strong> from {group.name}? They will lose access to all expenses and history in this circle.
+                            </p>
+
+                            <div className="flex gap-4">
+                                <Button
+                                    type="button"
+                                    onClick={() => setMemberToRemove(null)}
+                                    className="flex-1 bg-gray-50 text-gray-600 hover:bg-gray-100 border-none"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            const { removeMember } = await import('@/lib/firestore');
+                                            await removeMember(id, memberToRemove, user!.uid);
+                                            await fetchData();
+                                            showToast('Member removed successfully', 'success');
+                                            setMemberToRemove(null);
+                                        } catch (error: any) {
+                                            showToast(error.message || 'Failed to remove member', 'error');
+                                        }
+                                    }}
+                                    className="flex-1 bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-200"
+                                >
+                                    Remove
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <ExportReportModal
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
@@ -615,7 +800,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             <Link href={`/groups/${id}/settle`} onClick={() => setIsMenuOpen(false)}>
                                 <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer group">
                                     <div className="p-2 bg-white rounded-xl shadow-sm group-hover:shadow-md transition-shadow">
-                                        <HiCurrencyDollar className="w-5 h-5" />
+                                        <HiCurrencyRupee className="w-5 h-5" />
                                     </div>
                                     <span className="font-bold text-sm">Settle Up</span>
                                 </div>
@@ -696,6 +881,6 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     </motion.div>
                 </button>
             </div>
-        </div>
+        </div >
     );
 }

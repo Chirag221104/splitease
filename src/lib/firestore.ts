@@ -432,7 +432,7 @@ export const validateUserEmail = async (email: string): Promise<{ uid: string; e
 };
 
 // Invites
-export const createInvite = async (groupId: string, emailOrUsername: string, invitedBy: string) => {
+export const createInvite = async (groupId: string, emailOrUsername: string, invitedBy: string, groupName?: string, inviterName?: string) => {
     let userData;
 
     // Determine if input is email or username
@@ -452,9 +452,11 @@ export const createInvite = async (groupId: string, emailOrUsername: string, inv
 
     const inviteRef = await addDoc(collection(db, "invites"), {
         groupId,
+        groupName,
         email: userData.email,
         invitedUid: userData.uid,
         invitedBy,
+        inviterName,
         status: 'pending',
         createdAt: serverTimestamp()
     });
@@ -475,10 +477,12 @@ export const acceptInvite = async (inviteId: string, user: User) => {
     if (!invite) throw new Error("Invite not found");
     if (invite.status !== 'pending') throw new Error("Invite already processed");
 
-    // Verify that the logged-in user matches the invited user
-    if (invite.invitedUid && invite.invitedUid !== user.uid) {
-        throw new Error("This invite is not for you. Please log in with the correct account.");
-    }
+    // Check if the invite was generated for a specific email/user and we want to enforce it
+    // For now, we'll allow anyone with the link to join to make sharing easier.
+    // If you want strict enforce:
+    // if (invite.invitedUid && invite.invitedUid !== user.uid) {
+    //     throw new Error("This invite is not for you. Please log in with the correct account.");
+    // }
 
     // Add user to group
     await updateDoc(doc(db, "groups", invite.groupId), {
@@ -496,12 +500,12 @@ export const acceptInvite = async (inviteId: string, user: User) => {
     });
 
     // Log activity
-    const userName = user.displayName || user.email || "Someone";
+    const userName = user.displayName || user.username || user.email || "Someone";
     await addDoc(collection(db, "activities"), {
         type: "invite_accepted",
         groupId: invite.groupId,
         userId: user.uid,
-        description: `${userName} joined the group`,
+        description: `joined the group`,
         createdAt: serverTimestamp()
     });
 };
@@ -514,6 +518,34 @@ export const getGroupInvites = async (groupId: string) => {
     );
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Invite));
+};
+
+export const getPendingUserGroupInvites = async (userEmail: string, userUid: string) => {
+    // Check by email or by invitedUid
+    const qEmail = query(
+        collection(db, "invites"),
+        where("email", "==", userEmail),
+        where("status", "==", "pending")
+    );
+    const qUid = query(
+        collection(db, "invites"),
+        where("invitedUid", "==", userUid),
+        where("status", "==", "pending")
+    );
+
+    const [snapshotEmail, snapshotUid] = await Promise.all([getDocs(qEmail), getDocs(qUid)]);
+
+    const invitesMap = new Map<string, Invite>();
+
+    snapshotEmail.docs.forEach(doc => {
+        invitesMap.set(doc.id, { id: doc.id, ...doc.data() } as Invite);
+    });
+
+    snapshotUid.docs.forEach(doc => {
+        invitesMap.set(doc.id, { id: doc.id, ...doc.data() } as Invite);
+    });
+
+    return Array.from(invitesMap.values());
 };
 
 // Member Management
