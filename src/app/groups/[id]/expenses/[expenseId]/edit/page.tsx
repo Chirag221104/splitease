@@ -232,7 +232,8 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
 
     const getUserName = (member?: User) => {
         if (!member) return "Unknown";
-        return member.uid === user?.uid ? "You" : (member.displayName || member.email?.split('@')[0]);
+        if (member.uid === user?.uid) return "You";
+        return member.displayName || member.username || member.email?.split('@')[0] || "User";
     };
 
     if (loading) return (
