@@ -381,7 +381,11 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                         No expenses recorded yet.
                                     </div>
                                 ) : (
-                                    expenses.map((expense, idx) => (
+                                    [...expenses].sort((a, b) => {
+                                        const dateA = a.date || a.createdAt || 0;
+                                        const dateB = b.date || b.createdAt || 0;
+                                        return (typeof dateB === 'number' ? dateB : 0) - (typeof dateA === 'number' ? dateA : 0);
+                                    }).map((expense, idx) => (
                                         <motion.div
                                             key={expense.id}
                                             initial={{ opacity: 0, x: -10 }}
