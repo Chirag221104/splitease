@@ -221,6 +221,7 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                 splits,
                 category
             }, user.uid);
+            router.refresh();
             router.push(`/groups/${id}`);
         } catch (err: any) {
             console.error("Error updating expense:", err);
@@ -397,6 +398,11 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
                                 <div className="bg-gray-50 rounded-3xl p-6">
                                     <div className="flex items-center justify-between mb-4">
                                         <span className="text-sm font-bold">Select participants</span>
+                                        {splitType === "UNEQUAL" && (
+                                            <p className={`text-[10px] font-bold uppercase tracking-widest ${Math.abs(totalAmountNum - currentSplits.reduce((s, a) => s + a.amount, 0)) < 0.01 ? 'text-teal-500' : 'text-rose-400'}`}>
+                                                Remaining: ₹{(totalAmountNum - currentSplits.reduce((s, a) => s + a.amount, 0)).toFixed(2)}
+                                            </p>
+                                        )}
                                     </div>
                                     <div className="space-y-2">
                                         {members.map(member => (

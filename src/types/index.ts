@@ -24,6 +24,7 @@ export interface Group {
     endDate?: number;   // Optional trip end date
     budgetLimit?: number;
     budgetPeriod?: 'trip' | 'monthly';
+    parentId?: string; // UID of the parent group if this is a subgroup
 }
 
 export type SplitType = 'EQUAL' | 'UNEQUAL' | 'SHARES' | 'PERCENTAGE';

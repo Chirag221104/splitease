@@ -224,6 +224,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                 description: activityDesc
             });
 
+            router.refresh();
             router.push(`/groups/${id}`);
         } catch (err: any) {
             console.error("Error adding expense:", err);
@@ -420,14 +421,21 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                                                     : 'text-gray-400 hover:text-gray-500'
                                                     }`}
                                             >
-                                                {type === 'EQUAL' ? 'Equally' : type.replace('AGE', '')}
+                                                {type === 'EQUAL' ? 'Equally' : type === 'UNEQUAL' ? 'Exact' : type.replace('AGE', '')}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <p className="text-[11px] font-medium text-gray-300 uppercase px-1">Configure weights & participation</p>
+                                    <div className="flex justify-between items-center px-1">
+                                        <p className="text-[11px] font-medium text-gray-300 uppercase">Configure weights & participation</p>
+                                        {splitType === "UNEQUAL" && (
+                                            <p className={`text-[10px] font-bold uppercase tracking-widest ${Math.abs(totalAmountNum - currentSplits.reduce((s, a) => s + a.amount, 0)) < 0.01 ? 'text-teal-500' : 'text-rose-400'}`}>
+                                                Remaining: ₹{(totalAmountNum - currentSplits.reduce((s, a) => s + a.amount, 0)).toFixed(2)}
+                                            </p>
+                                        )}
+                                    </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {members.map(member => {
                                             const isActive = selectedParticipants.has(member.uid);

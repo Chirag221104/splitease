@@ -25,8 +25,15 @@ service cloud.firestore {
     
     // 2. Groups
     match /groups/{groupId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && (request.auth.uid in resource.data.members);
+      allow create: if isSignedIn() && (
+        !('parentId' in request.resource.data) || 
+        (request.auth.uid in get(/databases/$(database)/documents/groups/$(request.resource.data.parentId)).data.members)
+      );
+      allow read: if isSignedIn() && (
+        (request.auth.uid in resource.data.members) ||
+        // Allow reading if it's a subgroup and user is in the parent group
+        ('parentId' in resource.data && request.auth.uid in get(/databases/$(database)/documents/groups/$(resource.data.parentId)).data.members)
+      );
       allow update: if isSignedIn() && (
         (request.auth.uid in resource.data.members) ||
         // Allow adding self to members array (for accepting invites)
@@ -37,7 +44,10 @@ service cloud.firestore {
           !(request.auth.uid in resource.data.members)
         )
       );
-      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid ||
+        ('parentId' in resource.data && get(/databases/$(database)/documents/groups/$(resource.data.parentId)).data.createdBy == request.auth.uid)
+      );
     }
 
     // 3. Friends System

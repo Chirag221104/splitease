@@ -4,18 +4,19 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense, updateGroup } from "@/lib/firestore";
+import { getGroupDetails, getGroupExpenses, getGroupSettlements, getUsersByIds, getGroupInvites, deleteExpense, updateGroup, getSubgroups, createSubgroup } from "@/lib/firestore";
 import { calculateGroupBalances, simplifyDebts, calculatePairwiseBalances, calculateExpenseImpact, getSuggestedSettlements } from "@/lib/calculations";
 import { getDisplayName } from "@/lib/utils";
 import { Group, Expense, Settlement, Transaction, User, Invite, Balance } from "@/types";
 import { AddMemberForm } from "@/components/groups/AddMemberForm";
 import { DeleteConfirmationModal } from "@/components/groups/DeleteConfirmationModal";
 import { EditGroupModal } from "@/components/groups/EditGroupModal";
+import { CreateSubgroupModal } from "@/components/groups/CreateSubgroupModal";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp, HiChartBar, HiClipboardList, HiCalendar } from "react-icons/hi";
+import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp, HiChartBar, HiClipboardList, HiCalendar, HiUserGroup } from "react-icons/hi";
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
 import GroupAnalytics from "@/components/groups/GroupAnalytics";
@@ -60,6 +61,12 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<"expenses" | "insights">("expenses");
+    const [subgroups, setSubgroups] = useState<Group[]>([]);
+    const [showSubgroupModal, setShowSubgroupModal] = useState(false);
+    const [parentGroup, setParentGroup] = useState<Group | null>(null);
+    const [parentMembersProfiles, setParentMembersProfiles] = useState<User[]>([]);
+    const [isOverallView, setIsOverallView] = useState(true);
+    const [totalSpending, setTotalSpending] = useState(0);
 
     const fetchData = async () => {
         if (!user || !id) return;
@@ -81,22 +88,55 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 setInvites(invitesData);
 
                 const expensesData = await getGroupExpenses(id);
-                setExpenses(expensesData);
-
                 const settlementsData = await getGroupSettlements(id);
+                
+                // Fetch subgroups
+                const subgroupsData = await getSubgroups(id, user.uid);
+                setSubgroups(subgroupsData);
+
+                let displayExpenses = expensesData;
+                let displaySettlements = settlementsData;
+
+                if (isOverallView && !groupData.parentId && subgroupsData.length > 0) {
+                    const allSubgroupExpenses = await Promise.all(subgroupsData.map(s => getGroupExpenses(s.id)));
+                    const allSubgroupSettlements = await Promise.all(subgroupsData.map(s => getGroupSettlements(s.id)));
+                    
+                    displayExpenses = [...expensesData, ...allSubgroupExpenses.flat()];
+                    displaySettlements = [...settlementsData, ...allSubgroupSettlements.flat()];
+                }
+
+                setExpenses(expensesData); // Keep history group-specific
                 setSettlements(settlementsData);
 
-                const calculatedBalances = calculateGroupBalances(expensesData, settlementsData, groupData.members);
+                // Use display data for balances and stats
+                const calculatedBalances = calculateGroupBalances(displayExpenses, displaySettlements, groupData.members);
                 setNetBalances(calculatedBalances);
 
-                const ledger = calculatePairwiseBalances(expensesData, settlementsData, groupData.members);
+                const ledger = calculatePairwiseBalances(displayExpenses, displaySettlements, groupData.members);
                 setPairwiseLedger(ledger);
 
                 const simplified = simplifyDebts(calculatedBalances);
                 setBalances(simplified);
+
+                // For the stats cards, we'll use these aggregated values
+                setTotalSpending(displayExpenses.reduce((sum, e) => sum + e.amount, 0));
+
+                // Fetch parent group if this is a subgroup
+                if (groupData.parentId) {
+                    const parentData = await getGroupDetails(groupData.parentId);
+                    setParentGroup(parentData);
+                    if (parentData) {
+                        const profiles = await getUsersByIds(parentData.members);
+                        setParentMembersProfiles(profiles);
+                    }
+                } else {
+                    setParentGroup(null);
+                    setParentMembersProfiles([]);
+                }
             }
         } catch (error) {
             console.error("Error fetching group details:", error);
+            showToast("Failed to load group details", "error");
         } finally {
             setLoading(false);
         }
@@ -104,7 +144,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
     useEffect(() => {
         fetchData();
-    }, [user, id]);
+    }, [id, user, isOverallView]);
 
     const getUserName = (uid: string) => {
         if (uid === user?.uid) return "You";
@@ -151,11 +191,11 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                         <motion.button
                             initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }}
-                            onClick={() => router.push('/groups')}
+                            onClick={() => router.push(group.parentId ? `/groups/${group.parentId}` : '/groups')}
                             className="flex items-center gap-2 text-gray-400 hover:text-teal-600 font-black uppercase tracking-widest text-[10px] mb-4 transition-colors group"
                         >
                             <HiArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-                            Return to Circles
+                            {group.parentId ? `Return to ${parentGroup?.name || 'Parent'}` : 'Return to Circles'}
                         </motion.button>
                         <motion.h1
                             initial={{ opacity: 0, x: -20 }}
@@ -195,6 +235,16 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             <HiDownload className="w-5 h-5 mr-2" />
                             Export
                         </Button>
+                        {!group.parentId && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowSubgroupModal(true)}
+                                className="rounded-xl border-gray-100 bg-teal-50/30 text-teal-700 hover:bg-teal-50 border-teal-100/50"
+                            >
+                                <HiUserGroup className="w-5 h-5 mr-2" />
+                                Sub-Activity
+                            </Button>
+                        )}
                         <Link href={`/groups/${id}/expenses/new`}>
                             <Button className="rounded-xl shadow-lg shadow-teal-100 px-6">
                                 <HiPlus className="w-5 h-5 mr-1" />
@@ -232,7 +282,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 <div className="flex flex-wrap gap-4">
                     <StatCard
                         label="Total Group Spending"
-                        value={`₹${expenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}`}
+                        value={`₹${totalSpending.toLocaleString()}`}
                         icon={<HiCurrencyRupee className="w-6 h-6" />}
                         colorClass="bg-teal-50 text-teal-600"
                         delay={0.1}
@@ -283,8 +333,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             exit={{ opacity: 0, height: 0 }}
                             className="bg-white p-6 rounded-3xl border border-teal-100 shadow-sm overflow-hidden"
                         >
-                            <h3 className="text-lg font-bold text-gray-900 mb-4">Invite new members</h3>
-                            <AddMemberForm groupId={id} groupName={group.name} onMemberAdded={fetchData} currentMembers={group.members} />
+                            <h3 className="text-lg font-bold text-gray-900 mb-4">{group.parentId ? 'Add members from parent group' : 'Invite new members'}</h3>
+                            <AddMemberForm groupId={id} groupName={group.name} onMemberAdded={fetchData} currentMembers={group.members} parentMembers={group.parentId ? parentMembersProfiles : undefined} />
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -479,8 +529,76 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                 {/* Sidebar: Balances & Members */}
                 <div className="space-y-8 w-full">
+                    {/* View Toggle (Overall vs Group) */}
+                    {!group.parentId && subgroups.length > 0 && (
+                        <div className="bg-white rounded-3xl p-2 border border-teal-100 flex shadow-sm">
+                            <button
+                                onClick={() => setIsOverallView(true)}
+                                className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isOverallView ? 'bg-teal-600 text-white shadow-lg shadow-teal-200' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                Overall Totals
+                            </button>
+                            <button
+                                onClick={() => setIsOverallView(false)}
+                                className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${!isOverallView ? 'bg-teal-600 text-white shadow-lg shadow-teal-200' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                This Group Only
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Sub-Activities (Nested Groups) */}
+                    {!group.parentId && (
+                        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 overflow-hidden relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full opacity-30 -mr-8 -mt-8" />
+                            <div className="flex justify-between items-center mb-6 relative z-10">
+                                <h3 className="text-xl font-black text-gray-900 italic">Sub-Activities</h3>
+                                <button 
+                                    onClick={() => setShowSubgroupModal(true)}
+                                    className="p-2 bg-teal-100 text-teal-600 rounded-xl hover:bg-teal-600 hover:text-white transition-all shadow-sm"
+                                    title="Create Subgroup"
+                                >
+                                    <HiPlus className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {subgroups.length === 0 ? (
+                                <div className="text-center py-6 border-2 border-dashed border-gray-50 rounded-2xl relative z-10">
+                                    <p className="text-[10px] text-gray-400 font-black tracking-widest uppercase mb-1">No nested groups</p>
+                                    <p className="text-[9px] text-gray-400 font-medium">Create a subgroup for trips or events.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3 relative z-10">
+                                    {subgroups.map((sub) => (
+                                        <Link 
+                                            key={sub.id} 
+                                            href={`/groups/${sub.id}`}
+                                            className="flex items-center justify-between p-4 bg-gray-50/50 hover:bg-white border border-transparent hover:border-teal-100 hover:shadow-lg hover:shadow-teal-100/30 rounded-2xl transition-all group/sub"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-teal-600 shadow-sm group-hover/sub:bg-teal-600 group-hover/sub:text-white transition-all">
+                                                    <HiUserGroup className="w-5 h-5" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="font-bold text-sm text-gray-900 group-hover/sub:text-teal-600 transition-colors truncate">{sub.name}</p>
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{sub.members.length} participants</p>
+                                                </div>
+                                            </div>
+                                            <HiArrowRight className="w-4 h-4 text-gray-300 group-hover/sub:text-teal-500 group-hover/sub:translate-x-1 transition-all" />
+                                        </Link>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Persistent Personal Ledger */}
-                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 relative overflow-hidden">
+                        {isOverallView && !group.parentId && subgroups.length > 0 && (
+                            <div className="absolute top-0 right-0 p-2">
+                                <span className="bg-teal-50 text-teal-600 text-[8px] font-black uppercase tracking-tighter px-2 py-1 rounded-lg border border-teal-100">Aggregated</span>
+                            </div>
+                        )}
                         <h3 className="text-xl font-black text-gray-900 mb-6 italic">Personal Ledger</h3>
                         {(() => {
                             const userOwes = Object.entries(pairwiseLedger[user.uid] || {}).filter(([_, amt]) => amt > 0.01);
@@ -835,6 +953,23 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <CreateSubgroupModal
+                isOpen={showSubgroupModal}
+                onClose={() => setShowSubgroupModal(false)}
+                parentMembers={Object.values(members)}
+                onConfirm={async (name, description, selectedMemberIds) => {
+                    if (!user) return;
+                    if (subgroups.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+                        throw new Error("A sub-activity with this name already exists in this circle");
+                    }
+                    await createSubgroup(name, description, user.uid, id, selectedMemberIds);
+                    showToast('Sub-activity created!', 'success');
+                    router.refresh();
+                    fetchData();
+                }}
+            />
+
             <ExportReportModal
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
@@ -872,6 +1007,18 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                     <span className="font-bold text-sm">Settle Up</span>
                                 </div>
                             </Link>
+
+                            {!group.parentId && (
+                                <button
+                                    onClick={() => { setShowSubgroupModal(true); setIsMenuOpen(false); }}
+                                    className="flex items-center gap-3 w-full p-3 rounded-2xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer group"
+                                >
+                                    <div className="p-2 bg-white rounded-xl shadow-sm group-hover:shadow-md transition-shadow">
+                                        <HiUserGroup className="w-5 h-5" />
+                                    </div>
+                                    <span className="font-bold text-sm">Create Subgroup</span>
+                                </button>
+                            )}
 
                             <div className="h-px bg-gray-100 my-1 mx-2" />
 

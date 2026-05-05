@@ -15,9 +15,10 @@ interface AddMemberFormProps {
     groupName?: string;
     onMemberAdded: () => void;
     currentMembers?: string[];
+    parentMembers?: User[]; // If provided, only show these and add directly
 }
 
-export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMembers = [] }: AddMemberFormProps) {
+export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMembers = [], parentMembers }: AddMemberFormProps) {
     const [email, setEmail] = useState("");
     const [friends, setFriends] = useState<User[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(false);
@@ -29,7 +30,7 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
 
     useEffect(() => {
         const fetchFriends = async () => {
-            if (!user) return;
+            if (!user || parentMembers) return; // Don't fetch friends if it's a subgroup restricted view
             setLoadingFriends(true);
             try {
                 const f = await getFriends(user.uid);
@@ -41,7 +42,25 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
             }
         };
         fetchFriends();
-    }, [user]);
+    }, [user, parentMembers]);
+
+    // Direct add for subgroups
+    const handleDirectAdd = async (targetUser: User) => {
+        if (!user) return;
+        setInvitingFriendId(targetUser.uid);
+        setError("");
+        setSuccess("");
+        try {
+            const { addMember } = await import("@/lib/firestore");
+            await addMember(groupId, targetUser.uid, user.uid);
+            setSuccess(`${targetUser.displayName || targetUser.username} added to sub-activity!`);
+            onMemberAdded();
+        } catch (err: any) {
+            setError(err.message || "Failed to add member.");
+        } finally {
+            setInvitingFriendId(null);
+        }
+    };
 
     const invitePerson = async (targetEmail: string, friendId?: string) => {
         if (!user) return;
@@ -68,6 +87,63 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
         e.preventDefault();
         invitePerson(email);
     };
+
+    // If it's a subgroup, we only show parent members and they are added directly
+    if (parentMembers) {
+        const availableParentMembers = parentMembers.filter(m => !currentMembers.includes(m.uid));
+
+        return (
+            <div className="space-y-6">
+                <div className="space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                        <HiUsers className="w-3 h-3" /> Add from Parent Group
+                    </p>
+                    {availableParentMembers.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic bg-gray-50 p-4 rounded-2xl border border-dashed border-gray-100">
+                            All parent members are already in this sub-activity.
+                        </p>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {availableParentMembers.map((m) => (
+                                <button
+                                    key={m.uid}
+                                    type="button"
+                                    disabled={invitingFriendId === m.uid}
+                                    onClick={() => handleDirectAdd(m)}
+                                    className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-gray-100 hover:border-teal-500 hover:shadow-sm transition-all text-left group"
+                                >
+                                    <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-black text-xs group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                                        {invitingFriendId === m.uid ? (
+                                            <div className="w-3 h-3 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+                                        ) : (
+                                            (m.displayName?.[0] || m.username?.[0] || "U").toUpperCase()
+                                        )}
+                                    </div>
+                                    <span className="text-[11px] font-bold text-gray-700 truncate flex-1">
+                                        {m.displayName || m.username}
+                                    </span>
+                                    <HiPlus className="w-3 h-3 text-gray-300 group-hover:text-teal-600" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <AnimatePresence>
+                    {error && (
+                        <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-xs font-bold text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-100">
+                            {error}
+                        </motion.p>
+                    )}
+                    {success && (
+                        <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-xs font-bold text-teal-600 bg-teal-50 p-3 rounded-xl border border-teal-100 italic">
+                            ✨ {success}
+                        </motion.p>
+                    )}
+                </AnimatePresence>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

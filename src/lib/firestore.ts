@@ -49,6 +49,36 @@ export const createGroup = async (name: string, description: string, createdBy: 
     return groupRef.id;
 };
 
+export const createSubgroup = async (name: string, description: string, createdBy: string, parentId: string, members: string[]) => {
+    const groupRef = await addDoc(collection(db, "groups"), {
+        name,
+        description,
+        createdBy,
+        parentId,
+        createdAt: serverTimestamp(),
+        members: members // Subgroup members from parent
+    });
+
+    // Add group to user profiles for each member
+    const updatePromises = members.map(uid => 
+        updateDoc(doc(db, "users", uid), {
+            groups: arrayUnion(groupRef.id)
+        })
+    );
+    await Promise.all(updatePromises);
+
+    // Log activity in the parent group
+    await addDoc(collection(db, "activities"), {
+        type: "group_created",
+        groupId: parentId,
+        userId: createdBy,
+        description: `created subgroup "${name}"`,
+        createdAt: serverTimestamp()
+    });
+
+    return groupRef.id;
+};
+
 export const updateGroup = async (groupId: string, data: Partial<Group>) => {
     const groupRef = doc(db, "groups", groupId);
     const updateData: any = { ...data };
@@ -62,11 +92,32 @@ export const updateGroup = async (groupId: string, data: Partial<Group>) => {
 
 export const getUserGroups = async (userId: string) => {
     try {
-        const q = query(collection(db, "groups"), where("members", "array-contains", userId));
+        // Only fetch top-level groups for the main dashboard
+        const q = query(
+            collection(db, "groups"), 
+            where("members", "array-contains", userId)
+        );
         const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+        return querySnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() } as Group))
+            .filter(g => !g.parentId); // Filter out subgroups for main feed
     } catch (error) {
         console.error("Error in getUserGroups for userId:", userId, error);
+        throw error;
+    }
+};
+
+export const getSubgroups = async (parentId: string, userId: string): Promise<Group[]> => {
+    try {
+        const q = query(
+            collection(db, "groups"),
+            where("parentId", "==", parentId),
+            where("members", "array-contains", userId)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+    } catch (error) {
+        console.error("Error fetching subgroups:", error);
         throw error;
     }
 };
@@ -140,6 +191,24 @@ export const deleteGroup = async (groupId: string, userId: string) => {
 
     // Finally, delete the group document
     await deleteDoc(doc(db, "groups", groupId));
+};
+
+// Direct member add (for subgroups)
+export const addMember = async (groupId: string, userId: string, addedBy: string) => {
+    const groupRef = doc(db, "groups", groupId);
+    await updateDoc(groupRef, {
+        members: arrayUnion(userId)
+    });
+    await updateDoc(doc(db, "users", userId), {
+        groups: arrayUnion(groupId)
+    });
+    await addDoc(collection(db, "activities"), {
+        type: "invite_accepted",
+        groupId,
+        userId: addedBy,
+        description: `added a member directly`,
+        createdAt: serverTimestamp()
+    });
 };
 
 // Expenses

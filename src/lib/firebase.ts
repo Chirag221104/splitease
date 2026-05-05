@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -21,6 +21,12 @@ if (!firebaseConfig.apiKey) {
 }
 
 const auth = getAuth(app);
+
+// Ensure session persists across browser restarts and tabs
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.error("Failed to set auth persistence:", err);
+});
+
 const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 export { app, auth, db };
