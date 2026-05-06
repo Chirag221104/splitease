@@ -65,28 +65,32 @@ export const calculateGroupBalances = (
 
     // Process expenses
     expenses.forEach(expense => {
-        // Handle new multi-contributor format
-        if (expense.contributors) {
-            // Add contributions (what people paid)
-            Object.entries(expense.contributors).forEach(([userId, amount]) => {
-                balances[userId] = (balances[userId] || 0) + amount;
-            });
+        const totalAmount = expense.amount;
+        if (totalAmount <= 0) return;
 
-            // Subtract splits (what people owe)
-            expense.splits.forEach(split => {
-                balances[split.userId] = (balances[split.userId] || 0) - split.amount;
+        // Use a temp map to resolve contributions and splits for THIS expense
+        const expenseNet: Record<string, number> = {};
+
+        // 1. Add contributions
+        if (expense.contributors && Object.keys(expense.contributors).length > 0) {
+            Object.entries(expense.contributors).forEach(([uid, amt]) => {
+                expenseNet[uid] = (expenseNet[uid] || 0) + amt;
             });
+        } else if (expense.paidBy) {
+            expenseNet[expense.paidBy] = (expenseNet[expense.paidBy] || 0) + totalAmount;
         }
-        // Backward compatibility with old paidBy format
-        else if (expense.paidBy) {
-            const paidBy = expense.paidBy;
-            expense.splits.forEach(split => {
-                if (split.userId !== paidBy) {
-                    balances[paidBy] = (balances[paidBy] || 0) + split.amount;
-                    balances[split.userId] = (balances[split.userId] || 0) - split.amount;
-                }
-            });
-        }
+
+        // 2. Subtract splits
+        expense.splits.forEach(split => {
+            expenseNet[split.userId] = (expenseNet[split.userId] || 0) - split.amount;
+        });
+
+        // 3. Apply to global balances (only for valid group members)
+        Object.entries(expenseNet).forEach(([uid, net]) => {
+            if (members.includes(uid)) {
+                balances[uid] = (balances[uid] || 0) + net;
+            }
+        });
     });
 
     // Process settlements
@@ -129,18 +133,19 @@ export const calculatePairwiseBalances = (
 
         // 1. Determine net contribution for each user in this expense
         const netContributions: Record<string, number> = {};
-        members.forEach(m => netContributions[m] = 0);
-
-        if (expense.contributors) {
+        
+        // Add what people paid
+        if (expense.contributors && Object.keys(expense.contributors).length > 0) {
             Object.entries(expense.contributors).forEach(([uid, amt]) => {
-                netContributions[uid] += amt;
+                netContributions[uid] = (netContributions[uid] || 0) + amt;
             });
         } else if (expense.paidBy) {
-            netContributions[expense.paidBy] += totalAmount;
+            netContributions[expense.paidBy] = (netContributions[expense.paidBy] || 0) + totalAmount;
         }
 
+        // Subtract what people owe
         expense.splits.forEach(split => {
-            netContributions[split.userId] -= split.amount;
+            netContributions[split.userId] = (netContributions[split.userId] || 0) - split.amount;
         });
 
         // 2. Separate into debtors and creditors for THIS expense
@@ -149,10 +154,14 @@ export const calculatePairwiseBalances = (
         let totalCredit = 0;
 
         Object.entries(netContributions).forEach(([uid, net]) => {
-            if (net < -0.01) debtors.push({ uid, amount: Math.abs(net) });
-            if (net > 0.01) {
-                creditors.push({ uid, amount: net });
-                totalCredit += net;
+            // ONLY process members who are officially in the group
+            // This prevents "zombie" debts from non-existent IDs
+            if (members.includes(uid)) {
+                if (net < -0.01) debtors.push({ uid, amount: Math.abs(net) });
+                if (net > 0.01) {
+                    creditors.push({ uid, amount: net });
+                    totalCredit += net;
+                }
             }
         });
 
@@ -161,7 +170,11 @@ export const calculatePairwiseBalances = (
             debtors.forEach(debtor => {
                 creditors.forEach(creditor => {
                     const contributionToThisCreditor = debtor.amount * (creditor.amount / totalCredit);
-                    ledger[debtor.uid][creditor.uid] += contributionToThisCreditor;
+                    // Ensure the ledger entry exists before adding
+                    if (!ledger[debtor.uid]) ledger[debtor.uid] = {};
+                    if (!ledger[creditor.uid]) ledger[creditor.uid] = {};
+                    
+                    ledger[debtor.uid][creditor.uid] = (ledger[debtor.uid][creditor.uid] || 0) + contributionToThisCreditor;
                 });
             });
         }

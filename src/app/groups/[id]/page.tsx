@@ -67,6 +67,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [parentMembersProfiles, setParentMembersProfiles] = useState<User[]>([]);
     const [isOverallView, setIsOverallView] = useState(true);
     const [totalSpending, setTotalSpending] = useState(0);
+    const [displayExpenses, setDisplayExpenses] = useState<Expense[]>([]);
+    const [displaySettlements, setDisplaySettlements] = useState<Settlement[]>([]);
 
     const fetchData = async () => {
         if (!user || !id) return;
@@ -89,37 +91,49 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                 const expensesData = await getGroupExpenses(id);
                 const settlementsData = await getGroupSettlements(id);
-                
+
                 // Fetch subgroups
                 const subgroupsData = await getSubgroups(id, user.uid);
                 setSubgroups(subgroupsData);
 
-                let displayExpenses = expensesData;
-                let displaySettlements = settlementsData;
+                let currentExpenses = expensesData;
+                let currentSettlements = settlementsData;
 
                 if (isOverallView && !groupData.parentId && subgroupsData.length > 0) {
                     const allSubgroupExpenses = await Promise.all(subgroupsData.map(s => getGroupExpenses(s.id)));
                     const allSubgroupSettlements = await Promise.all(subgroupsData.map(s => getGroupSettlements(s.id)));
+
+                    const combinedExpenses = [...expensesData, ...allSubgroupExpenses.flat()];
+                    const combinedSettlements = [...settlementsData, ...allSubgroupSettlements.flat()];
+
+                    console.log('DEBUG: Aggregating expenses for overall view');
+
+                    // Deduplicate by ID to prevent multiplication of balances
+                    const deduplicatedExpenses = Array.from(new Map(combinedExpenses.map(e => [e.id, e])).values());
+                    const deduplicatedSettlements = Array.from(new Map(combinedSettlements.map(s => [s.id, s])).values());
                     
-                    displayExpenses = [...expensesData, ...allSubgroupExpenses.flat()];
-                    displaySettlements = [...settlementsData, ...allSubgroupSettlements.flat()];
+                    currentExpenses = deduplicatedExpenses;
+                    currentSettlements = deduplicatedSettlements;
                 }
+
+                setDisplayExpenses(currentExpenses);
+                setDisplaySettlements(currentSettlements);
 
                 setExpenses(expensesData); // Keep history group-specific
                 setSettlements(settlementsData);
 
                 // Use display data for balances and stats
-                const calculatedBalances = calculateGroupBalances(displayExpenses, displaySettlements, groupData.members);
+                const calculatedBalances = calculateGroupBalances(currentExpenses, currentSettlements, groupData.members);
                 setNetBalances(calculatedBalances);
 
-                const ledger = calculatePairwiseBalances(displayExpenses, displaySettlements, groupData.members);
+                const ledger = calculatePairwiseBalances(currentExpenses, currentSettlements, groupData.members);
                 setPairwiseLedger(ledger);
 
                 const simplified = simplifyDebts(calculatedBalances);
                 setBalances(simplified);
 
                 // For the stats cards, we'll use these aggregated values
-                setTotalSpending(displayExpenses.reduce((sum, e) => sum + e.amount, 0));
+                setTotalSpending(currentExpenses.reduce((sum, e) => sum + e.amount, 0));
 
                 // Fetch parent group if this is a subgroup
                 if (groupData.parentId) {
@@ -282,7 +296,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 <div className="flex flex-wrap gap-4">
                     <StatCard
                         label="Total Group Spending"
-                        value={`₹${totalSpending.toLocaleString()}`}
+                        value={`₹${(isOverallView ? displayExpenses : expenses).reduce((sum, e) => sum + e.amount, 0).toLocaleString()}`}
                         icon={<HiCurrencyRupee className="w-6 h-6" />}
                         colorClass="bg-teal-50 text-teal-600"
                         delay={0.1}
@@ -290,12 +304,16 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     <StatCard
                         label="Your Balance"
                         value={`${(() => {
-                            const balance = calculateGroupBalances(expenses, settlements, [user.uid])[user.uid] || 0;
+                            const sourceExpenses = isOverallView ? displayExpenses : expenses;
+                            const sourceSettlements = isOverallView ? displaySettlements : settlements;
+                            const balance = calculateGroupBalances(sourceExpenses, sourceSettlements, [user.uid])[user.uid] || 0;
                             return (balance >= 0 ? "+" : "") + "₹" + Math.abs(balance).toLocaleString();
                         })()}`}
                         icon={<HiCurrencyRupee className="w-6 h-6" />}
                         colorClass={(() => {
-                            const balance = calculateGroupBalances(expenses, settlements, [user.uid])[user.uid] || 0;
+                            const sourceExpenses = isOverallView ? displayExpenses : expenses;
+                            const sourceSettlements = isOverallView ? displaySettlements : settlements;
+                            const balance = calculateGroupBalances(sourceExpenses, sourceSettlements, [user.uid])[user.uid] || 0;
                             return balance >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600";
                         })()}
                         delay={0.2}
@@ -384,7 +402,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                     [...expenses].sort((a, b) => {
                                         const dateA = a.date || a.createdAt || 0;
                                         const dateB = b.date || b.createdAt || 0;
-                                        return (typeof dateB === 'number' ? dateB : 0) - (typeof dateA === 'number' ? dateA : 0);
+                                        // Ascending order: Oldest first
+                                        return (typeof dateA === 'number' ? dateA : 0) - (typeof dateB === 'number' ? dateB : 0);
                                     }).map((expense, idx) => (
                                         <motion.div
                                             key={expense.id}
@@ -487,21 +506,30 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                     {/* Member Spending Summary */}
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="px-8 py-6 border-b border-gray-50">
+                        <div className="px-8 py-6 border-b border-gray-50 flex justify-between items-center">
                             <h3 className="text-xl font-black text-gray-900 italic">Member Contributions</h3>
+                            {isOverallView && <span className="text-[10px] font-black text-teal-600 bg-teal-50 px-3 py-1 rounded-full uppercase tracking-widest">Aggregated</span>}
                         </div>
                         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {group.members.map((memberId) => {
-                                const totalSpent = expenses
-                                    .filter(e => e.paidBy === memberId || (e.contributors && e.contributors[memberId]))
+                                // Use displayExpenses for consistency with ledger when in overall view
+                                const sourceExpenses = isOverallView ? displayExpenses : expenses;
+                                
+                                const totalSpent = sourceExpenses
+                                    .filter(e => {
+                                        if (e.contributors) return e.contributors[memberId] > 0;
+                                        return e.paidBy === memberId;
+                                    })
                                     .reduce((sum, e) => {
                                         if (e.contributors) return sum + (e.contributors[memberId] || 0);
                                         return sum + e.amount;
                                     }, 0);
-                                const totalOwed = expenses
+                                    
+                                const totalOwed = sourceExpenses
                                     .flatMap(e => e.splits)
                                     .filter(s => s.userId === memberId)
                                     .reduce((sum, s) => sum + s.amount, 0);
+                                    
                                 const netBalance = totalSpent - totalOwed;
 
                                 return (
@@ -529,6 +557,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             })}
                         </div>
                     </div>
+
                 </div>
 
                 {/* Sidebar: Balances & Members */}
@@ -557,7 +586,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             <div className="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full opacity-30 -mr-8 -mt-8" />
                             <div className="flex justify-between items-center mb-6 relative z-10">
                                 <h3 className="text-xl font-black text-gray-900 italic">Sub-Activities</h3>
-                                <button 
+                                <button
                                     onClick={() => setShowSubgroupModal(true)}
                                     className="p-2 bg-teal-100 text-teal-600 rounded-xl hover:bg-teal-600 hover:text-white transition-all shadow-sm"
                                     title="Create Subgroup"
@@ -574,8 +603,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             ) : (
                                 <div className="space-y-3 relative z-10">
                                     {subgroups.map((sub) => (
-                                        <Link 
-                                            key={sub.id} 
+                                        <Link
+                                            key={sub.id}
                                             href={`/groups/${sub.id}`}
                                             className="flex items-center justify-between p-4 bg-gray-50/50 hover:bg-white border border-transparent hover:border-teal-100 hover:shadow-lg hover:shadow-teal-100/30 rounded-2xl transition-all group/sub"
                                         >
@@ -1085,6 +1114,8 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                         />
                     )}
                 </AnimatePresence>
+
+
 
                 <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
