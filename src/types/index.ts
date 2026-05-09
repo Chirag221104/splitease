@@ -132,6 +132,7 @@ export interface PersonalExpense {
     id: string;
     groupId: string;
     groupName: string;
+    parentGroupName?: string; // If this is a subgroup, the parent group's name
     category: string;
     totalAmount: number;
     personalShare: number;

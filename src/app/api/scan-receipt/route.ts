@@ -24,13 +24,14 @@ Analyze the provided receipt image and extract the following information in a JS
 {
   "amount": number (the grand total),
   "description": string (name of the store or a short summary),
-  "date": string (ISO format if visible, otherwise today's date),
+  "date": string (MUST include both date AND time if visible on the receipt. Use format "YYYY-MM-DDTHH:mm:ss". For example if the receipt shows "18/10/18" and "22:45", return "2018-10-18T22:45:00". If no time is visible, use "12:00:00" as default time.),
   "category": "Food" | "Travel" | "Shopping" | "Entertainment" | "Utilities" | "Transport" | "Rent" | "Medical" | "Insurance" | "Others",
   "items": [{"name": string, "price": number, "qty": number}]
 }
 Only return the raw JSON object. No markdown, no backticks.
 If a value is not found, use a sensible default.
-The amount should be the final total including tax.`;
+The amount should be the final total including tax.
+IMPORTANT: Look carefully for the TIME on the receipt (often near the date). Include it in the date field.`;
 
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",

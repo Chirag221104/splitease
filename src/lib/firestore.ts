@@ -761,8 +761,32 @@ export const getAllExpensesForUser = async (userId: string): Promise<ExpenseWith
 // Personal Insights: Get all expenses across all groups with the user's personal share
 export const getAllUserPersonalExpenses = async (userId: string): Promise<PersonalExpense[]> => {
     try {
-        const userGroups = await getUserGroups(userId);
+        // Fetch ALL groups (including subgroups) the user belongs to
+        const q = query(
+            collection(db, "groups"),
+            where("members", "array-contains", userId)
+        );
+        const snap = await getDocs(q);
+        const allGroups = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
         const personalExpenses: PersonalExpense[] = [];
+
+        // Build a lookup map for parent group names
+        const groupMap: Record<string, Group> = {};
+        allGroups.forEach(g => { groupMap[g.id] = g; });
+
+        // For subgroups whose parent isn't in our list, fetch the parent
+        const missingParentIds = allGroups
+            .filter(g => g.parentId && !groupMap[g.parentId])
+            .map(g => g.parentId!);
+        const uniqueMissingIds = [...new Set(missingParentIds)];
+        for (const pid of uniqueMissingIds) {
+            try {
+                const parentDoc = await getDoc(doc(db, "groups", pid));
+                if (parentDoc.exists()) {
+                    groupMap[pid] = { id: parentDoc.id, ...parentDoc.data() } as Group;
+                }
+            } catch (e) { /* skip */ }
+        }
 
         // Normalize category to Title Case
         const normalizeCategory = (cat?: string): string => {
@@ -772,7 +796,7 @@ export const getAllUserPersonalExpenses = async (userId: string): Promise<Person
         };
 
         // Fetch all expenses from all groups in parallel
-        const groupExpensePromises = userGroups.map(async (group) => {
+        const groupExpensePromises = allGroups.map(async (group) => {
             const expenses = await getGroupExpenses(group.id);
             return { group, expenses };
         });
@@ -780,6 +804,9 @@ export const getAllUserPersonalExpenses = async (userId: string): Promise<Person
         const results = await Promise.all(groupExpensePromises);
 
         for (const { group, expenses } of results) {
+            // Resolve parent group name
+            const parentGroupName = group.parentId ? groupMap[group.parentId]?.name : undefined;
+
             for (const expense of expenses) {
                 if (expense.isDeleted) continue;
 
@@ -806,6 +833,7 @@ export const getAllUserPersonalExpenses = async (userId: string): Promise<Person
                     id: expense.id,
                     groupId: group.id,
                     groupName: group.name,
+                    parentGroupName,
                     category: normalizeCategory(expense.category),
                     totalAmount: expense.amount,
                     personalShare,

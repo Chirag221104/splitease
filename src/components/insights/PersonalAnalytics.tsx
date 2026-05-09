@@ -120,11 +120,14 @@ export default function PersonalAnalytics({ expenses }: PersonalAnalyticsProps) 
         });
     }, [filteredExpenses]);
 
-    // Group breakdown (Bar chart)
+    // Group breakdown (Bar chart) - use parent→child labels for subgroups
     const groupData = useMemo(() => {
         const data: Record<string, number> = {};
         filteredExpenses.forEach(e => {
-            data[e.groupName] = (data[e.groupName] || 0) + e.personalShare;
+            const label = e.parentGroupName
+                ? `${e.groupName} → ${e.parentGroupName}`
+                : e.groupName;
+            data[label] = (data[label] || 0) + e.personalShare;
         });
         return Object.entries(data)
             .map(([name, value]) => ({ name, spent: Math.round(value) }))
@@ -366,8 +369,16 @@ export default function PersonalAnalytics({ expenses }: PersonalAnalyticsProps) 
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-bold text-gray-800 truncate">{exp.description}</p>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                            <span className="text-[10px] font-black text-gray-400 uppercase">{exp.groupName}</span>
+                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                            {exp.parentGroupName ? (
+                                                <>
+                                                    <span className="text-[10px] font-black text-indigo-500 uppercase">{exp.groupName}</span>
+                                                    <span className="text-[10px] text-gray-300">→</span>
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase">{exp.parentGroupName}</span>
+                                                </>
+                                            ) : (
+                                                <span className="text-[10px] font-black text-gray-400 uppercase">{exp.groupName}</span>
+                                            )}
                                             <span className="text-gray-200">•</span>
                                             <span className="text-[10px] font-bold text-gray-400">{format(new Date(exp.date), "MMM dd, yyyy")}</span>
                                         </div>
