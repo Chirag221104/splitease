@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp, HiChartBar, HiClipboardList, HiCalendar, HiUserGroup } from "react-icons/hi";
+import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, HiArrowRight, HiPencil, HiInformationCircle, HiChevronDown, HiChevronUp, HiChartBar, HiClipboardList, HiCalendar, HiUserGroup, HiCheckCircle } from "react-icons/hi";
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
 import GroupAnalytics from "@/components/groups/GroupAnalytics";
@@ -99,21 +99,26 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 let currentExpenses = expensesData;
                 let currentSettlements = settlementsData;
 
+                // AGGREGATION LOGIC
                 if (isOverallView && !groupData.parentId && subgroupsData.length > 0) {
+                    // Scenario A: Parent Group (Overall View) - Aggregate all subgroups
                     const allSubgroupExpenses = await Promise.all(subgroupsData.map(s => getGroupExpenses(s.id)));
                     const allSubgroupSettlements = await Promise.all(subgroupsData.map(s => getGroupSettlements(s.id)));
 
                     const combinedExpenses = [...expensesData, ...allSubgroupExpenses.flat()];
                     const combinedSettlements = [...settlementsData, ...allSubgroupSettlements.flat()];
 
-                    console.log('DEBUG: Aggregating expenses for overall view');
-
-                    // Deduplicate by ID to prevent multiplication of balances
-                    const deduplicatedExpenses = Array.from(new Map(combinedExpenses.map(e => [e.id, e])).values());
-                    const deduplicatedSettlements = Array.from(new Map(combinedSettlements.map(s => [s.id, s])).values());
+                    // Deduplicate by ID
+                    currentExpenses = Array.from(new Map(combinedExpenses.map(e => [e.id, e])).values());
+                    currentSettlements = Array.from(new Map(combinedSettlements.map(s => [s.id, s])).values());
+                } else if (groupData.parentId) {
+                    // Scenario B: Subgroup - Inherit settlements from parent group
+                    const parentSettlements = await getGroupSettlements(groupData.parentId);
+                    const combinedSettlements = [...settlementsData, ...parentSettlements];
                     
-                    currentExpenses = deduplicatedExpenses;
-                    currentSettlements = deduplicatedSettlements;
+                    // Deduplicate settlements
+                    currentSettlements = Array.from(new Map(combinedSettlements.map(s => [s.id, s])).values());
+                    // Expenses stay local to the subgroup
                 }
 
                 setDisplayExpenses(currentExpenses);
@@ -160,6 +165,29 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
         fetchData();
     }, [id, user, isOverallView]);
 
+    const handleDeleteSettlement = async (settlementId: string) => {
+        if (!confirm("Are you sure you want to delete this payment record?")) return;
+        try {
+            const { deleteDoc, doc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+            const { db } = await import("@/lib/firebase");
+            await deleteDoc(doc(db, "settlements", settlementId));
+            
+            // Log activity
+            await addDoc(collection(db, "activities"), {
+                type: "settle_deleted",
+                groupId: id,
+                userId: user?.uid,
+                description: `deleted a payment record`,
+                createdAt: serverTimestamp()
+            });
+
+            await fetchData();
+        } catch (error) {
+            console.error("Error deleting settlement:", error);
+            alert("Failed to delete settlement");
+        }
+    };
+
     const getUserName = (uid: string) => {
         if (uid === user?.uid) return "You";
         return getDisplayName(members[uid]);
@@ -171,13 +199,20 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
         // Splitwise usually shows history in chronological order. 
         // We sort by date (already likely sorted, but let's be sure)
-        const sortedExpenses = [...expenses].sort((a, b) => a.date - b.date);
+        const getVal = (d: any) => {
+            if (typeof d === 'number') return d;
+            if (d?.seconds) return d.seconds * 1000;
+            return 0;
+        };
+
+        const sortedExpenses = [...expenses].sort((a, b) => getVal(a.date || a.createdAt) - getVal(b.date || b.createdAt));
         const expenseIndex = sortedExpenses.findIndex(e => e.id === expenseId);
 
         // Sum up to this expense (inclusive)
         const relevantExpenses = sortedExpenses.slice(0, expenseIndex + 1);
         // Include settlements up to this expense's date
-        const relevantSettlements = settlements.filter(s => s.date <= sortedExpenses[expenseIndex].date);
+        const targetDate = getVal(sortedExpenses[expenseIndex].date || sortedExpenses[expenseIndex].createdAt);
+        const relevantSettlements = settlements.filter(s => getVal(s.date) <= targetDate);
 
         const balanceAfter = calculateGroupBalances(relevantExpenses, relevantSettlements, [user!.uid])[user!.uid] || 0;
 
@@ -394,30 +429,34 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{expenses.length} Records</span>
                             </div>
                             <div className="divide-y divide-gray-50">
-                                {expenses.length === 0 ? (
+                                {displayExpenses.length === 0 && displaySettlements.length === 0 ? (
                                     <div className="p-12 text-center text-gray-400 font-medium">
-                                        No expenses recorded yet.
+                                        No transactions recorded yet.
                                     </div>
                                 ) : (
-                                    [...expenses].sort((a, b) => {
+                                    [
+                                        ...displayExpenses.map(e => ({ ...e, type: 'expense' })),
+                                        ...displaySettlements.map(s => ({ ...s, type: 'settlement' }))
+                                    ].sort((a: any, b: any) => {
                                         const dateA = a.date || a.createdAt || 0;
                                         const dateB = b.date || b.createdAt || 0;
-                                        // Ascending order: Oldest first
-                                        return (typeof dateA === 'number' ? dateA : 0) - (typeof dateB === 'number' ? dateB : 0);
-                                    }).map((expense, idx) => (
+                                        const timeA = typeof dateA === 'number' ? dateA : (dateA?.seconds ? dateA.seconds * 1000 : 0);
+                                        const timeB = typeof dateB === 'number' ? dateB : (dateB?.seconds ? dateB.seconds * 1000 : 0);
+                                        return timeA - timeB; // Ascending: Oldest first
+                                    }).map((item: any, idx) => (
                                         <motion.div
-                                            key={expense.id}
+                                            key={item.id}
                                             initial={{ opacity: 0, x: -10 }}
                                             animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: idx * 0.05 }}
-                                            className="p-6 hover:bg-gray-50/50 transition-colors group relative"
+                                            transition={{ delay: idx * 0.02 }}
+                                            className={`p-6 transition-colors group relative ${item.type === 'settlement' ? 'bg-emerald-50/20 hover:bg-emerald-50/40' : 'hover:bg-gray-50/50'}`}
                                         >
                                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-6">
                                                 <div className="flex items-center gap-4 sm:gap-6 flex-1 min-w-0">
-                                                    <div className="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors duration-300 min-w-[72px] shrink-0 text-center flex flex-col items-center justify-center">
-                                                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-teal-500 mb-0.5 transition-colors">
+                                                    <div className={`p-3 rounded-2xl transition-colors duration-300 min-w-[72px] shrink-0 text-center flex flex-col items-center justify-center ${item.type === 'settlement' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-50 text-gray-400 group-hover:bg-teal-50 group-hover:text-teal-500'}`}>
+                                                        <span className="text-[10px] font-black uppercase tracking-widest mb-0.5">
                                                             {(() => {
-                                                                const dateVal = expense.date || expense.createdAt;
+                                                                const dateVal = item.date || item.createdAt;
                                                                 let dateObj: Date;
                                                                 if (typeof dateVal === 'number') dateObj = new Date(dateVal);
                                                                 else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
@@ -425,9 +464,9 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                                 return format(dateObj, 'MMM');
                                                             })()}
                                                         </span>
-                                                        <span className="text-xl font-black text-gray-900 group-hover:text-teal-700 block leading-tight mb-0.5">
+                                                        <span className="text-xl font-black block leading-tight mb-0.5 text-gray-900">
                                                             {(() => {
-                                                                const dateVal = expense.date || expense.createdAt;
+                                                                const dateVal = item.date || item.createdAt;
                                                                 let dateObj: Date;
                                                                 if (typeof dateVal === 'number') dateObj = new Date(dateVal);
                                                                 else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
@@ -435,9 +474,9 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                                 return format(dateObj, 'dd');
                                                             })()}
                                                         </span>
-                                                        <span className="text-[9px] font-bold text-gray-500 group-hover:text-teal-600 transition-colors whitespace-nowrap">
+                                                        <span className="text-[9px] font-bold whitespace-nowrap">
                                                             {(() => {
-                                                                const dateVal = expense.date || expense.createdAt;
+                                                                const dateVal = item.date || item.createdAt;
                                                                 let dateObj: Date;
                                                                 if (typeof dateVal === 'number') dateObj = new Date(dateVal);
                                                                 else if (dateVal && typeof (dateVal as any).toDate === 'function') dateObj = (dateVal as any).toDate();
@@ -446,54 +485,59 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                                                             })()}
                                                         </span>
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-lg font-bold text-gray-900 group-hover:text-teal-600 transition-colors truncate">
-                                                            {expense.description}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 font-medium mt-1">
-                                                            Paid by <span className="text-gray-900 font-bold">{(() => {
-                                                                if (expense.contributors) {
-                                                                    const contributors = Object.entries(expense.contributors)
-                                                                        .filter(([_, amt]) => amt > 0)
-                                                                        .map(([uid, amt]) => `${getUserName(uid)}`)
-                                                                        .join(", ");
-                                                                    return contributors || "Unknown";
-                                                                } else if (expense.paidBy) {
-                                                                    return getUserName(expense.paidBy);
-                                                                } else {
-                                                                    return "Unknown";
-                                                                }
-                                                            })()}</span>
+
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h4 className="text-base font-black text-gray-900 truncate">
+                                                                {item.type === 'expense' ? item.description : (
+                                                                    <span className="flex items-center gap-2">
+                                                                        {getUserName(item.fromUser)} paid {getUserName(item.toUser)}
+                                                                        <HiCheckCircle className="text-emerald-500 w-4 h-4" />
+                                                                    </span>
+                                                                )}
+                                                            </h4>
+                                                            {item.groupId !== id && (
+                                                                <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[8px] font-black uppercase tracking-widest rounded-full">
+                                                                    Subgroup
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                                            {item.type === 'expense' ? (
+                                                                <>Paid by <span className="text-gray-900">{getUserName(item.paidBy || Object.keys(item.contributors || {})[0])}</span></>
+                                                            ) : (
+                                                                <span className="text-emerald-600">Settlement</span>
+                                                            )}
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center justify-between sm:justify-end gap-6 pl-20 sm:pl-0 sm:shrink-0">
-                                                    <div className="text-left sm:text-right">
-                                                        <p className="text-2xl font-black text-gray-900">₹{expense.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">{expense.splitType}</p>
-                                                        {(() => {
-                                                            const { before, after, impact } = getBalanceAtExpense(expense.id);
-                                                            if (impact === 0 && before === after) return null;
-                                                            return (
-                                                                <div className="mt-1 flex flex-col items-start sm:items-end">
-                                                                    <p className={`text-[9px] font-bold uppercase ${impact >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>
-                                                                        {impact >= 0 ? '+' : ''}₹{impact.toLocaleString()} impact
-                                                                    </p>
-                                                                    <p className="text-[8px] text-gray-400 font-medium">
-                                                                        ₹{before.toLocaleString()} → <span className="text-gray-600 font-bold">₹{after.toLocaleString()}</span>
-                                                                    </p>
-                                                                </div>
-                                                            );
-                                                        })()}
+
+                                                <div className="flex items-center justify-between sm:justify-end gap-6 pl-[88px] sm:pl-0">
+                                                    <div className="text-right shrink-0">
+                                                        <p className={`text-xl font-black italic tracking-tight ${item.type === 'settlement' ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                                            ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                        </p>
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                                            {item.type === 'expense' ? (item.splitType || 'EQUAL') : 'Payment'}
+                                                        </p>
                                                     </div>
-                                                    <div className="flex items-center justify-end sm:shrink-0 ml-4">
-                                                        <Link
-                                                            href={`/groups/${id}/expenses/${expense.id}/edit`}
-                                                            className="p-2 bg-gray-50 hover:bg-teal-50 text-gray-400 hover:text-teal-600 rounded-xl transition-colors"
-                                                            title="Edit Expense"
-                                                        >
-                                                            <HiPencil className="w-5 h-5" />
-                                                        </Link>
+
+                                                    <div className="flex items-center gap-2">
+                                                        {item.type === 'expense' ? (
+                                                            <Link
+                                                                href={`/groups/${id}/expenses/${item.id}/edit`}
+                                                                className="w-10 h-10 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-teal-50 hover:text-teal-600 transition-all border border-transparent hover:border-teal-100"
+                                                            >
+                                                                <HiPencil className="w-5 h-5" />
+                                                            </Link>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleDeleteSettlement(item.id)}
+                                                                className="w-10 h-10 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-rose-50 hover:text-rose-600 transition-all border border-transparent hover:border-rose-100"
+                                                            >
+                                                                <HiTrash className="w-5 h-5" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1013,7 +1057,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
             />
 
             {/* Floating Action Button & Menu */}
-            < div className="fixed bottom-6 right-6 z-50 flex flex-col items-end md:hidden" >
+            <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end md:hidden">
                 <AnimatePresence>
                     {isMenuOpen && (
                         <motion.div

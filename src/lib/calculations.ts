@@ -95,11 +95,13 @@ export const calculateGroupBalances = (
 
     // Process settlements
     settlements.forEach(settlement => {
-        // fromUser paid toUser
-        // fromUser's balance increases (debt reduced)
-        balances[settlement.fromUser] = (balances[settlement.fromUser] || 0) + settlement.amount;
-        // toUser's balance decreases (owed amount reduced)
-        balances[settlement.toUser] = (balances[settlement.toUser] || 0) - settlement.amount;
+        // Only update if the user is part of this group's members
+        if (members.includes(settlement.fromUser)) {
+            balances[settlement.fromUser] = (balances[settlement.fromUser] || 0) + settlement.amount;
+        }
+        if (members.includes(settlement.toUser)) {
+            balances[settlement.toUser] = (balances[settlement.toUser] || 0) - settlement.amount;
+        }
     });
 
     return balances;
@@ -182,8 +184,11 @@ export const calculatePairwiseBalances = (
 
     // Process settlements
     settlements.forEach(settlement => {
-        // fromUser paid toUser, reducing debt
-        ledger[settlement.fromUser][settlement.toUser] -= settlement.amount;
+        // Only process if both users are in the current context
+        if (ledger[settlement.fromUser] && ledger[settlement.toUser]) {
+            // fromUser paid toUser, reducing debt
+            ledger[settlement.fromUser][settlement.toUser] = (ledger[settlement.fromUser][settlement.toUser] || 0) - settlement.amount;
+        }
     });
 
     // Net off: if A owes B 10 and B owes A 5, A owes B 5.

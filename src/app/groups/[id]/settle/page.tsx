@@ -55,9 +55,23 @@ function SettleUpForm({ params }: { params: Promise<{ id: string }> }) {
                     if (urlRecipient) setRecipientId(urlRecipient);
                     if (urlAmount) setAmount(urlAmount);
 
-                    // Calculate balances for suggestions
-                    const expenses = await getGroupExpenses(id);
-                    const settlements = await getGroupSettlements(id);
+                    // Calculate balances for suggestions (Hierarchy-Aware)
+                    let expenses = await getGroupExpenses(id);
+                    let settlements = await getGroupSettlements(id);
+
+                    // If this is a subgroup, pull in parent settlements to avoid double-settling
+                    if (groupData.parentId) {
+                        const parentExpenses = await getGroupExpenses(groupData.parentId);
+                        const parentSettlements = await getGroupSettlements(groupData.parentId);
+                        
+                        // We only care about parent expenses if the user thinks the subgroup should be part of parent's balance
+                        // But strictly for settling, we MUST see parent settlements.
+                        const combinedSettlements = [...settlements, ...parentSettlements];
+                        settlements = Array.from(new Map(combinedSettlements.map(s => [s.id, s])).values());
+                        
+                        // Optional: Include parent expenses if you want a truly global settle-up
+                        // For now, let's just merge settlements to prevent the "double pay" bug.
+                    }
 
                     const calculatedBalances = calculateGroupBalances(expenses, settlements, groupData.members);
                     const simplified = simplifyDebts(calculatedBalances);
@@ -100,6 +114,7 @@ function SettleUpForm({ params }: { params: Promise<{ id: string }> }) {
                 date: Date.now()
             } as any);
 
+            router.refresh(); // Clear client-side cache
             router.push(`/groups/${id}`);
         } catch (error) {
             console.error("Error recording settlement:", error);
