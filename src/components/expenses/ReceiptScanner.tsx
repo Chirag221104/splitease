@@ -36,7 +36,11 @@ export const ReceiptScanner = ({ onScanComplete }: ReceiptScannerProps) => {
                         body: JSON.stringify({ image: base64 }),
                     });
 
-                    if (!response.ok) throw new Error("Failed to scan");
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || "Failed to scan");
+                    }
+
                     const result = await response.json();
                     
                     setScanStep("complete");
@@ -45,9 +49,9 @@ export const ReceiptScanner = ({ onScanComplete }: ReceiptScannerProps) => {
                         setIsScanning(false);
                         setScanStep("idle");
                     }, 800);
-                } catch (error) {
+                } catch (error: any) {
                     console.error("Scan failed:", error);
-                    alert("Failed to read receipt. Please try again or enter manually.");
+                    alert(error.message || "Failed to read receipt. Please try again or enter manually.");
                     setIsScanning(false);
                     setScanStep("idle");
                 }
@@ -125,7 +129,7 @@ export const ReceiptScanner = ({ onScanComplete }: ReceiptScannerProps) => {
                                 <p className="text-xs font-black uppercase tracking-widest text-teal-100">
                                     {scanStep === "analyzing" ? "AI Analyzing..." : "Done!"}
                                 </p>
-                                <p className="text-[10px] font-bold text-white/70">Powered by Gemini 2.5 Flash</p>
+                                <p className="text-[10px] font-bold text-white/70">Powered by Gemini 1.5 Flash</p>
                             </div>
                         </div>
 

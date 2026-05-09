@@ -1,9 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
+import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 
-const ai = new GoogleGenAI({
+const genAI = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "",
 });
+
+const openai = process.env.OPENAI_API_KEY 
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
 
 export async function POST(req: Request) {
     try {
@@ -33,39 +38,89 @@ If a value is not found, use a sensible default.
 The amount should be the final total including tax.
 IMPORTANT: Look carefully for the TIME on the receipt (often near the date). Include it in the date field.`;
 
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        { text: prompt },
-                        {
-                            inlineData: {
-                                data: base64Data,
-                                mimeType: mimeType,
+        // 1. TRY GEMINI FIRST
+        try {
+            console.log("Attempting scan with Gemini...");
+            const response = await genAI.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    data: base64Data,
+                                    mimeType: mimeType,
+                                },
                             },
-                        },
-                    ],
-                },
-            ],
-        });
+                        ],
+                    },
+                ],
+            });
 
-        const text = response.text || "";
+            if (response && response.text) {
+                const jsonMatch = response.text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    return NextResponse.json(parsed);
+                }
+            }
+            throw new Error("Gemini returned invalid or empty response");
+        } catch (geminiError: any) {
+            console.error("Gemini Scan Failed:", geminiError.message || geminiError);
 
-        // Extract JSON from the response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            return NextResponse.json(parsed);
+            // 2. FALLBACK TO OPENAI IF AVAILABLE
+            if (openai) {
+                console.log("Gemini failed or rate limited. Falling back to OpenAI ChatGPT...");
+                try {
+                    const chatCompletion = await openai.chat.completions.create({
+                        model: "gpt-4o", // Using the latest vision-capable model
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: prompt },
+                                    {
+                                        type: "image_url",
+                                        image_url: {
+                                            url: image.startsWith("data:") ? image : `data:${mimeType};base64,${base64Data}`,
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    });
+
+                    const text = chatCompletion.choices[0].message.content || "";
+                    const jsonMatch = text.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0]);
+                        return NextResponse.json(parsed);
+                    }
+                    throw new Error("OpenAI returned invalid response format");
+                } catch (openaiError: any) {
+                    console.error("OpenAI Fallback Failed:", openaiError.message || openaiError);
+                    throw new Error(`Both AI models failed. Gemini: ${geminiError.message}. OpenAI: ${openaiError.message}`);
+                }
+            }
+
+            // If no OpenAI key, handle the Gemini error specifically
+            let message = geminiError?.message || "An unexpected error occurred while scanning.";
+            let status = 500;
+
+            if (message.includes("429") || message.toLowerCase().includes("quota")) {
+                message = "Gemini Rate Limit Exceeded (Free Tier). Add an OpenAI API key for automatic failover.";
+                status = 429;
+            } else if (message.includes("400")) {
+                message = "The image might be too large or in an unsupported format.";
+                status = 400;
+            }
+
+            return NextResponse.json({ error: message }, { status });
         }
-
-        return NextResponse.json(
-            { error: "Could not parse receipt data from AI response" },
-            { status: 500 }
-        );
     } catch (error: any) {
-        console.error("Gemini Scan Error:", error?.message || error);
+        console.error("Critical Scan Error:", error);
         return NextResponse.json(
             { error: error?.message || "Unknown scan error" },
             { status: 500 }
