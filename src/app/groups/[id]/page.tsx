@@ -163,6 +163,37 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
     useEffect(() => {
         fetchData();
+
+        if (!id || !user) return;
+
+        // Set up real-time listeners for changes in the current group
+        const expensesQuery = query(collection(db, "groups", id, "expenses"));
+        const settlementsQuery = query(collection(db, "groups", id, "settlements"));
+        const groupRef = doc(db, "groups", id);
+
+        const unsubGroup = onSnapshot(groupRef, (snapshot) => {
+            if (snapshot.exists()) {
+                fetchData();
+            }
+        });
+
+        const unsubExpenses = onSnapshot(expensesQuery, () => {
+            fetchData();
+        });
+
+        const unsubSettlements = onSnapshot(settlementsQuery, () => {
+            fetchData();
+        });
+
+        // If in overall view, we should also listen to subgroups
+        // For simplicity and to avoid too many listeners, we trigger fetchData 
+        // which already handles the aggregation.
+        
+        return () => {
+            unsubGroup();
+            unsubExpenses();
+            unsubSettlements();
+        };
     }, [id, user, isOverallView]);
 
     const handleDeleteSettlement = async (settlementId: string) => {
