@@ -127,3 +127,14 @@ export interface Friendship {
     createdAt: number;
     updatedAt?: number;
 }
+
+export interface PersonalExpense {
+    id: string;
+    groupId: string;
+    groupName: string;
+    category: string;
+    totalAmount: number;
+    personalShare: number;
+    date: number;
+    description: string;
+}

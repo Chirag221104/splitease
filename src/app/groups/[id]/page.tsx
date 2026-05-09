@@ -421,7 +421,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {activeTab === "insights" ? (
-                        <GroupAnalytics expenses={expenses} members={Object.values(members)} group={group} />
+                        <GroupAnalytics expenses={isOverallView ? displayExpenses : expenses} members={Object.values(members)} group={group} />
                     ) : (
                         <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
                             <div className="px-8 py-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">

@@ -247,8 +247,13 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
             try {
                 const scanDate = new Date(data.date);
                 if (!isNaN(scanDate.getTime())) {
-                    scanDate.setMinutes(scanDate.getMinutes() - scanDate.getTimezoneOffset());
-                    setDate(scanDate.toISOString().slice(0, 16));
+                    // Format as YYYY-MM-DDTHH:mm for datetime-local input (no timezone shift needed)
+                    const year = scanDate.getFullYear();
+                    const month = String(scanDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(scanDate.getDate()).padStart(2, '0');
+                    const hours = String(scanDate.getHours()).padStart(2, '0');
+                    const mins = String(scanDate.getMinutes()).padStart(2, '0');
+                    setDate(`${year}-${month}-${day}T${hours}:${mins}`);
                 }
             } catch (e) {
                 console.error("Date parse error:", e);

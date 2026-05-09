@@ -17,7 +17,7 @@ import {
     runTransaction
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { User, Group, Expense, Settlement, Transaction, Invite, Activity, ExpenseWithGroup } from "@/types";
+import { User, Group, Expense, Settlement, Transaction, Invite, Activity, ExpenseWithGroup, PersonalExpense } from "@/types";
 import { logActivity, ActivityTypes } from "./activityService";
 
 // Groups
@@ -756,5 +756,71 @@ export const getAllExpensesForUser = async (userId: string): Promise<ExpenseWith
     });
 
     return allExpenses;
+};
+
+// Personal Insights: Get all expenses across all groups with the user's personal share
+export const getAllUserPersonalExpenses = async (userId: string): Promise<PersonalExpense[]> => {
+    try {
+        const userGroups = await getUserGroups(userId);
+        const personalExpenses: PersonalExpense[] = [];
+
+        // Normalize category to Title Case
+        const normalizeCategory = (cat?: string): string => {
+            if (!cat) return "Others";
+            const trimmed = cat.trim().toLowerCase();
+            return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+        };
+
+        // Fetch all expenses from all groups in parallel
+        const groupExpensePromises = userGroups.map(async (group) => {
+            const expenses = await getGroupExpenses(group.id);
+            return { group, expenses };
+        });
+
+        const results = await Promise.all(groupExpensePromises);
+
+        for (const { group, expenses } of results) {
+            for (const expense of expenses) {
+                if (expense.isDeleted) continue;
+
+                // Calculate personal share from splits
+                let personalShare = 0;
+                const userSplit = expense.splits?.find(s => s.userId === userId);
+                if (userSplit) {
+                    personalShare = userSplit.amount;
+                } else if (expense.splits && expense.splits.length > 0) {
+                    // User is not in the split — skip this expense
+                    continue;
+                } else {
+                    // Fallback: equal split among group members
+                    personalShare = expense.amount / group.members.length;
+                }
+
+                // Parse date safely
+                let dateVal = expense.date;
+                if (typeof dateVal !== 'number') {
+                    dateVal = (dateVal as any)?.seconds ? (dateVal as any).seconds * 1000 : Date.now();
+                }
+
+                personalExpenses.push({
+                    id: expense.id,
+                    groupId: group.id,
+                    groupName: group.name,
+                    category: normalizeCategory(expense.category),
+                    totalAmount: expense.amount,
+                    personalShare,
+                    date: dateVal,
+                    description: expense.description,
+                });
+            }
+        }
+
+        // Sort by date descending
+        personalExpenses.sort((a, b) => b.date - a.date);
+        return personalExpenses;
+    } catch (error) {
+        console.error("Error fetching personal expenses:", error);
+        throw error;
+    }
 };
 

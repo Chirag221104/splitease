@@ -7,7 +7,7 @@ import { calculateGroupBalances, calculateGlobalBalances } from "@/lib/calculati
 import { Group, Activity, User, Invite } from "@/types";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { HiPlus, HiUserGroup, HiEnvelope, HiCheckCircle, HiPencil, HiTrash, HiUserMinus, HiUserPlus, HiXCircle } from "react-icons/hi2";
+import { HiPlus, HiUserGroup, HiEnvelope, HiCheckCircle, HiPencil, HiTrash, HiUserMinus, HiUserPlus, HiXCircle, HiChartBar } from "react-icons/hi2";
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
@@ -163,17 +163,24 @@ export default function DashboardPage() {
                     </h1>
                     <p className="text-gray-500 font-medium mt-1">Welcome back, {user?.displayName || "Member"}</p>
                 </motion.div>
-                <Link href="/groups/create">
-                    <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                    >
+                <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-3"
+                >
+                    <Link href="/insights">
+                        <Button variant="outline" className="flex items-center gap-2 px-6 py-6 rounded-2xl border-2 border-gray-200 text-gray-600 hover:border-teal-400 hover:text-teal-600 transition-all duration-300">
+                            <HiChartBar className="w-5 h-5" />
+                            My Insights
+                        </Button>
+                    </Link>
+                    <Link href="/groups/create">
                         <Button className="flex items-center gap-2 px-8 py-6 rounded-2xl shadow-xl shadow-teal-100 hover:shadow-2xl transition-all duration-300">
                             <HiPlus className="w-6 h-6" />
                             Create New Group
                         </Button>
-                    </motion.div>
-                </Link>
+                    </Link>
+                </motion.div>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
