@@ -8,9 +8,10 @@ import { calculatePairwiseBalances } from "@/lib/calculations";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, SplitType, Split } from "@/types";
-import { HiArrowLeft, HiCheckCircle, HiTag, HiUserGroup, HiOutlineTemplate, HiLightningBolt } from "react-icons/hi";
+import { HiArrowLeft, HiCheckCircle, HiTag, HiUserGroup, HiOutlineTemplate, HiLightningBolt, HiSparkles } from "react-icons/hi";
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { motion, AnimatePresence } from "framer-motion";
+import { ReceiptScanner } from "@/components/expenses/ReceiptScanner";
 
 export default function AddExpensePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -238,6 +239,23 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
         return member.uid === user?.uid ? "You" : (member.displayName || member.email?.split('@')[0]);
     };
 
+    const handleScanComplete = (data: { amount: number; description: string; date?: string; category?: string }) => {
+        if (data.amount) setAmount(data.amount.toString());
+        if (data.description) setDescription(data.description);
+        if (data.category) setCategory(data.category);
+        if (data.date) {
+            try {
+                const scanDate = new Date(data.date);
+                if (!isNaN(scanDate.getTime())) {
+                    scanDate.setMinutes(scanDate.getMinutes() - scanDate.getTimezoneOffset());
+                    setDate(scanDate.toISOString().slice(0, 16));
+                }
+            } catch (e) {
+                console.error("Date parse error:", e);
+            }
+        }
+    };
+
     const currentSplits = calculateSplits();
     const totalAmountNum = parseFloat(amount) || 0;
 
@@ -276,6 +294,10 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
                     >
                         {/* Decorative background */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-teal-50 rounded-bl-full opacity-10 -mr-20 -mt-20 pointer-events-none"></div>
+
+                        <div className="relative z-10 mb-8">
+                            <ReceiptScanner onScanComplete={handleScanComplete} />
+                        </div>
 
                         <form onSubmit={handleSubmit} className="space-y-12 relative z-10">
                             {/* 1. Basic Info */}
