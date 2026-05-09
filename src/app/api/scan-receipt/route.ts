@@ -38,8 +38,12 @@ If a value is not found, use a sensible default.
 The amount should be the final total including tax.
 IMPORTANT: Look carefully for the TIME on the receipt (often near the date). Include it in the date field.`;
 
-        // 1. TRY GEMINI FIRST
+        // 1. TRY GEMINI FIRST (if key exists)
+        const geminiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+        
         try {
+            if (!geminiKey) throw new Error("GEMINI_API_KEY is missing");
+            
             console.log("Attempting scan with Gemini...");
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
@@ -68,7 +72,7 @@ IMPORTANT: Look carefully for the TIME on the receipt (often near the date). Inc
             }
             throw new Error("Gemini returned invalid or empty response");
         } catch (geminiError: any) {
-            console.error("Gemini Scan Failed:", geminiError.message || geminiError);
+            console.warn("Gemini Scan Failed or Skipped:", geminiError.message || "No Key");
 
             // 2. FALLBACK TO OPENAI IF AVAILABLE
             if (openai) {
