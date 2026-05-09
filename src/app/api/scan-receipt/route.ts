@@ -44,8 +44,11 @@ IMPORTANT: Look carefully for the TIME on the receipt (often near the date). Inc
         try {
             if (!geminiKey) throw new Error("GEMINI_API_KEY is missing");
             
-            console.log("Attempting scan with Gemini (Stable SDK)...");
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            console.log("Attempting scan with Gemini (Forcing v1 API)...");
+            const model = genAI.getGenerativeModel(
+                { model: "gemini-1.5-flash" },
+                { apiVersion: 'v1' }
+            );
             
             const result = await model.generateContent([
                 {
