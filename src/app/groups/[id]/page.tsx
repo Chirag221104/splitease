@@ -22,6 +22,7 @@ import { HiHome, HiUserAdd, HiPlus, HiTrash, HiMail, HiDownload, HiArrowLeft, Hi
 import { HiCurrencyRupee } from "react-icons/hi2";
 import { ExportReportModal } from "@/components/groups/ExportReportModal";
 import GroupAnalytics from "@/components/groups/GroupAnalytics";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 
 const StatCard = ({ label, value, icon, colorClass, delay = 0 }: { label: string, value: string, icon: any, colorClass: string, delay?: number }) => (
     <motion.div
@@ -71,6 +72,19 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     const [totalSpending, setTotalSpending] = useState(0);
     const [displayExpenses, setDisplayExpenses] = useState<Expense[]>([]);
     const [displaySettlements, setDisplaySettlements] = useState<Settlement[]>([]);
+    
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string | React.ReactNode;
+        confirmText?: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: "",
+        message: "",
+        onConfirm: () => {}
+    });
 
     const fetchData = async () => {
         if (!user || !id) return;
@@ -199,38 +213,58 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
     }, [id, user, isOverallView]);
 
     const handleDeleteSettlement = async (settlementId: string) => {
-        if (!confirm("Are you sure you want to delete this payment record?")) return;
-        try {
-            const { deleteDoc, doc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
-            const { db } = await import("@/lib/firebase");
-            await deleteDoc(doc(db, "settlements", settlementId));
-            
-            // Log activity
-            await addDoc(collection(db, "activities"), {
-                type: "settle_deleted",
-                groupId: id,
-                userId: user?.uid,
-                description: `deleted a payment record`,
-                createdAt: serverTimestamp()
-            });
-
-            await fetchData();
-        } catch (error) {
-            console.error("Error deleting settlement:", error);
-            alert("Failed to delete settlement");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Delete Payment",
+            message: "Are you sure you want to delete this payment record? This action cannot be undone.",
+            confirmText: "Delete",
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    const { deleteDoc, doc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+                    const { db } = await import("@/lib/firebase");
+                    await deleteDoc(doc(db, "settlements", settlementId));
+                    
+                    await addDoc(collection(db, "activities"), {
+                        type: "settle_deleted",
+                        groupId: id,
+                        userId: user?.uid,
+                        description: `deleted a payment record`,
+                        createdAt: serverTimestamp()
+                    });
+        
+                    await fetchData();
+                } catch (error) {
+                    console.error("Error deleting settlement:", error);
+                    showToast("Failed to delete settlement", "error");
+                }
+            }
+        });
     };
 
     const handleDeleteExpense = async (expense: Expense) => {
-        if (!confirm(`Are you sure you want to delete the expense "${expense.description}"?`)) return;
-        try {
-            await deleteExpense(expense.id, user!.uid);
-            showToast("Expense deleted successfully", "success");
-            await fetchData();
-        } catch (error) {
-            console.error("Error deleting expense:", error);
-            showToast("Failed to delete expense", "error");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Delete Expense",
+            message: (
+                <>
+                    Are you sure you want to delete the expense <strong className="text-gray-900">"{expense.description}"</strong>? 
+                    This will remove it from everyone's balances.
+                </>
+            ),
+            confirmText: "Delete",
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                try {
+                    await deleteExpense(expense.id, user!.uid);
+                    showToast("Expense deleted successfully", "success");
+                    await fetchData();
+                } catch (error) {
+                    console.error("Error deleting expense:", error);
+                    showToast("Failed to delete expense", "error");
+                }
+            }
+        });
     };
 
     const getUserName = (uid: string) => {
@@ -1114,13 +1148,24 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                 }}
             />
 
-            <ExportReportModal
-                isOpen={isExportModalOpen}
-                onClose={() => setIsExportModalOpen(false)}
-                group={group!}
-                expenses={expenses}
-                settlements={settlements}
-                members={members}
+            {group && (
+                <ExportReportModal
+                    isOpen={isExportModalOpen}
+                    onClose={() => setIsExportModalOpen(false)}
+                    group={group}
+                    expenses={expenses}
+                    settlements={settlements}
+                    members={members}
+                />
+            )}
+
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmText={confirmModal.confirmText}
             />
 
             {/* Floating Action Button & Menu */}
