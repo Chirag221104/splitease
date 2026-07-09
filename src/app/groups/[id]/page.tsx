@@ -221,6 +221,18 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
         }
     };
 
+    const handleDeleteExpense = async (expense: Expense) => {
+        if (!confirm(`Are you sure you want to delete the expense "${expense.description}"?`)) return;
+        try {
+            await deleteExpense(expense.id, user!.uid);
+            showToast("Expense deleted successfully", "success");
+            await fetchData();
+        } catch (error) {
+            console.error("Error deleting expense:", error);
+            showToast("Failed to delete expense", "error");
+        }
+    };
+
     const getUserName = (uid: string) => {
         if (uid === user?.uid) return "You";
         return getDisplayName(members[uid]);
@@ -557,12 +569,20 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                                                     <div className="flex items-center gap-2">
                                                         {item.type === 'expense' ? (
-                                                            <Link
-                                                                href={`/groups/${id}/expenses/${item.id}/edit`}
-                                                                className="w-10 h-10 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-teal-50 hover:text-teal-600 transition-all border border-transparent hover:border-teal-100"
-                                                            >
-                                                                <HiPencil className="w-5 h-5" />
-                                                            </Link>
+                                                            <>
+                                                                <Link
+                                                                    href={`/groups/${id}/expenses/${item.id}/edit`}
+                                                                    className="w-10 h-10 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-teal-50 hover:text-teal-600 transition-all border border-transparent hover:border-teal-100"
+                                                                >
+                                                                    <HiPencil className="w-5 h-5" />
+                                                                </Link>
+                                                                <button
+                                                                    onClick={() => handleDeleteExpense(item as any)}
+                                                                    className="w-10 h-10 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center hover:bg-rose-50 hover:text-rose-600 transition-all border border-transparent hover:border-rose-100"
+                                                                >
+                                                                    <HiTrash className="w-5 h-5" />
+                                                                </button>
+                                                            </>
                                                         ) : (
                                                             <button
                                                                 onClick={() => handleDeleteSettlement(item.id)}

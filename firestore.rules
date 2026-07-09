@@ -82,7 +82,10 @@ service cloud.firestore {
       allow read: if isSignedIn(); 
       allow create: if isSignedIn(); 
       allow update: if isSignedIn(); // Relaxed for migration
-      allow delete: if false; 
+      allow delete: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid ||
+        get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.createdBy == request.auth.uid
+      );
       
       match /versions/{versionId} {
         allow read: if isSignedIn();

@@ -15,7 +15,8 @@ import {
     orderBy,
     onSnapshot,
     documentId,
-    runTransaction
+    runTransaction,
+    writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, Group, Expense, Settlement, Transaction, Invite, Activity, ExpenseWithGroup, PersonalExpense } from "@/types";
@@ -287,7 +288,7 @@ export const updateExpense = async (expenseId: string, expense: Partial<Omit<Exp
     });
 };
 
-export const getGroupExpenses = async (groupId: string) => {
+export const getGroupExpenses = async (groupId: string): Promise<Expense[]> => {
     try {
         const q = query(
             collection(db, "expenses"),
