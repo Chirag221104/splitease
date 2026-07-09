@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getUserActivities, getUsersByIds } from "@/lib/firestore";
 import { Activity, User } from "@/types";
+import { getDisplayName } from "@/lib/utils";
 import { format } from "date-fns";
 import Link from "next/link";
 import { HiUserGroup, HiEnvelope, HiCheckCircle, HiArrowLeft, HiPencil, HiTrash, HiUserMinus, HiUserPlus, HiXCircle } from "react-icons/hi2";
@@ -45,14 +46,13 @@ export default function ActivityPage() {
         fetchActivities();
     }, [user]);
 
-    const getUserName = (uid: string) => {
-        if (!uid) return "Someone";
-        if (uid === user?.uid) return "You";
-        const member = members[uid];
+    const getUserName = (userId: string) => {
+        if (user && userId === user.uid) return "You";
+        const member = members[userId];
         if (member) {
-            return member.displayName || member.username || member.email?.split('@')[0] || "User";
+            return getDisplayName(member, "User");
         }
-        return "Member";
+        return "User";
     };
 
     const getActivityIcon = (type: Activity['type']) => {

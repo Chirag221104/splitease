@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { addExpense, getGroupDetails, getUsersByIds, createActivity, getGroupExpenses, getGroupSettlements } from "@/lib/firestore";
 import { calculatePairwiseBalances } from "@/lib/calculations";
+import { getDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, SplitType, Split } from "@/types";
@@ -236,7 +237,7 @@ export default function AddExpensePage({ params }: { params: Promise<{ id: strin
     };
 
     const getUserName = (member: User) => {
-        return member.uid === user?.uid ? "You" : (member.displayName || member.email?.split('@')[0]);
+        return member.uid === user?.uid ? "You" : getDisplayName(member, "Someone");
     };
 
     const handleScanComplete = (data: { amount: number; description: string; date?: string; category?: string }) => {

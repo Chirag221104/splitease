@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Expense, Settlement, Group, User, Transaction } from "@/types";
 import { calculateGroupBalances, simplifyDebts } from "./calculations";
-import { normalizeDate } from "./utils";
+import { normalizeDate, getDisplayName } from "./utils";
 
 
 interface ReportData {
@@ -21,7 +21,7 @@ interface ReportData {
 const getMemberName = (uid: string, members: User[]) => {
     const member = members.find(m => m.uid === uid);
     if (!member) return uid;
-    return member.displayName || member.username || member.email?.split('@')[0] || "User";
+    return getDisplayName(member, "User");
 };
 
 /**

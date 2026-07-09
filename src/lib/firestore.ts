@@ -1,6 +1,7 @@
 import {
     collection,
     addDoc,
+    setDoc,
     updateDoc,
     deleteDoc,
     doc,
@@ -850,5 +851,40 @@ export const getAllUserPersonalExpenses = async (userId: string): Promise<Person
         console.error("Error fetching personal expenses:", error);
         throw error;
     }
+};
+
+export const createOfflineMember = async (groupId: string, addedBy: string, data: { name: string }) => {
+    // Generate a document reference with an auto-ID upfront,
+    // then use setDoc so we can include the uid in one atomic write.
+    const userRef = doc(collection(db, "users"));
+
+    await setDoc(userRef, {
+        uid: userRef.id,
+        email: null,
+        displayName: data.name,
+        username: `guest_${userRef.id.substring(0, 8)}`,
+        phoneNumber: null,
+        photoURL: null,
+        groups: [groupId],
+        isDummy: true,
+        dummyCreatedBy: addedBy,
+        createdAt: serverTimestamp()
+    });
+
+    // Add to group
+    await updateDoc(doc(db, "groups", groupId), {
+        members: arrayUnion(userRef.id)
+    });
+
+    // Log activity
+    await addDoc(collection(db, "activities"), {
+        type: "invite_accepted",
+        groupId,
+        userId: addedBy,
+        description: `added offline member ${data.name}`,
+        createdAt: serverTimestamp()
+    });
+
+    return userRef.id;
 };
 

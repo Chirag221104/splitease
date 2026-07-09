@@ -4,7 +4,11 @@ export interface User {
     displayName: string | null;
     username?: string;
     photoURL: string | null;
+    phoneNumber?: string;
+    isDummy?: boolean;
+    dummyCreatedBy?: string;
     friends?: string[]; // Array of User UIDs for fast querying
+    groups?: string[]; // Array of Group IDs the user belongs to
     createdAt?: number;
     notificationSettings?: {
         expenseAdded: boolean;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createInvite } from "@/lib/firestore";
+import { createInvite, createOfflineMember } from "@/lib/firestore";
 import { getFriends } from "@/lib/friendsService";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -16,9 +16,10 @@ interface AddMemberFormProps {
     onMemberAdded: () => void;
     currentMembers?: string[];
     parentMembers?: User[]; // If provided, only show these and add directly
+    isGroupCreator?: boolean;
 }
 
-export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMembers = [], parentMembers }: AddMemberFormProps) {
+export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMembers = [], parentMembers, isGroupCreator }: AddMemberFormProps) {
     const [email, setEmail] = useState("");
     const [friends, setFriends] = useState<User[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(false);
@@ -26,6 +27,9 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
+    const [showOfflineForm, setShowOfflineForm] = useState(false);
+    const [offlineName, setOfflineName] = useState("");
+    const [offlineLoading, setOfflineLoading] = useState(false);
     const { user } = useAuth();
 
     useEffect(() => {
@@ -86,6 +90,27 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         invitePerson(email);
+    };
+
+    const handleOfflineSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user) return;
+        setOfflineLoading(true);
+        setError("");
+        setSuccess("");
+        try {
+            await createOfflineMember(groupId, user.uid, {
+                name: offlineName
+            });
+            setSuccess(`Offline member ${offlineName} created and added to group!`);
+            setOfflineName("");
+            setShowOfflineForm(false);
+            onMemberAdded();
+        } catch (err: any) {
+            setError(err.message || "Failed to create offline member.");
+        } finally {
+            setOfflineLoading(false);
+        }
     };
 
     // If it's a subgroup, we only show parent members and they are added directly
@@ -206,6 +231,44 @@ export function AddMemberForm({ groupId, groupName, onMemberAdded, currentMember
                     </Button>
                 </form>
             </div>
+
+            {isGroupCreator && (
+                <div className="pt-2 border-t border-gray-100">
+                    <button
+                        type="button"
+                        onClick={() => setShowOfflineForm(!showOfflineForm)}
+                        className="text-xs font-bold text-teal-600 hover:text-teal-700 flex items-center gap-1 transition-colors"
+                    >
+                        {showOfflineForm ? "− Cancel Offline Member" : "+ Add Offline Member (Without Account)"}
+                    </button>
+                    
+                    <AnimatePresence>
+                        {showOfflineForm && (
+                            <motion.form 
+                                initial={{ opacity: 0, height: 0 }} 
+                                animate={{ opacity: 1, height: 'auto' }} 
+                                exit={{ opacity: 0, height: 0 }} 
+                                onSubmit={handleOfflineSubmit} 
+                                className="space-y-3 mt-4 overflow-hidden p-1 -mx-1"
+                            >
+                                <div className="flex gap-2">
+                                    <Input
+                                        type="text"
+                                        value={offlineName}
+                                        onChange={(e) => setOfflineName(e.target.value)}
+                                        placeholder="Full Name"
+                                        required
+                                        className="flex-1 rounded-2xl h-11 border-gray-100 focus:ring-teal-500"
+                                    />
+                                    <Button type="submit" isLoading={offlineLoading} className="rounded-xl h-11 px-6 font-black shadow-md shadow-teal-50">
+                                        Create
+                                    </Button>
+                                </div>
+                            </motion.form>
+                        )}
+                    </AnimatePresence>
+                </div>
+            )}
 
             <AnimatePresence>
                 {error && (

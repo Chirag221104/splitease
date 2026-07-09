@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { updateExpense, getGroupDetails, getUsersByIds, getGroupExpenses, getGroupSettlements, getExpense } from "@/lib/firestore";
 import { calculatePairwiseBalances } from "@/lib/calculations";
+import { getDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { User, SplitType, Split } from "@/types";
@@ -233,8 +234,7 @@ export default function EditExpensePage({ params }: { params: Promise<{ id: stri
 
     const getUserName = (member?: User) => {
         if (!member) return "Unknown";
-        if (member.uid === user?.uid) return "You";
-        return member.displayName || member.username || member.email?.split('@')[0] || "User";
+        return member.uid === user?.uid ? "You" : getDisplayName(member, "Someone");
     };
 
     if (loading) return (

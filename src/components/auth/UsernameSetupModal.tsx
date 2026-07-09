@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { checkUsernameAvailability, updateUserUsername } from "@/lib/firestore";
@@ -17,14 +18,23 @@ export function UsernameSetupModal() {
     const [loading, setLoading] = useState(false);
     const [show, setShow] = useState(false);
 
+    const pathname = usePathname();
+
     useEffect(() => {
+        // Prevent showing the global modal on the guest join page,
+        // because the guest join page has its own specialized setup form.
+        if (pathname?.startsWith("/guest")) {
+            setShow(false);
+            return;
+        }
+
         // Only show if user exists and doesn't have a username
         if (user && !user.username) {
             setShow(true);
         } else {
             setShow(false);
         }
-    }, [user]);
+    }, [user, pathname]);
 
     const handleCheck = async () => {
         setError("");

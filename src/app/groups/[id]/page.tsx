@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { collection, query, doc, onSnapshot } from "firebase/firestore";
+import { collection, query, doc, onSnapshot, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -168,9 +168,9 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
         if (!id || !user) return;
 
-        // Set up real-time listeners for changes in the current group
-        const expensesQuery = query(collection(db, "groups", id, "expenses"));
-        const settlementsQuery = query(collection(db, "groups", id, "settlements"));
+        // Set up real-time listeners on the correct top-level collections
+        const expensesQuery = query(collection(db, "expenses"), where("groupId", "==", id));
+        const settlementsQuery = query(collection(db, "settlements"), where("groupId", "==", id));
         const groupRef = doc(db, "groups", id);
 
         const unsubGroup = onSnapshot(groupRef, (snapshot) => {
@@ -420,7 +420,7 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
                             className="bg-white p-6 rounded-3xl border border-teal-100 shadow-sm overflow-hidden"
                         >
                             <h3 className="text-lg font-bold text-gray-900 mb-4">{group.parentId ? 'Add members from parent group' : 'Invite new members'}</h3>
-                            <AddMemberForm groupId={id} groupName={group.name} onMemberAdded={fetchData} currentMembers={group.members} parentMembers={group.parentId ? parentMembersProfiles : undefined} />
+                            <AddMemberForm groupId={id} groupName={group.name} onMemberAdded={fetchData} currentMembers={group.members} parentMembers={group.parentId ? parentMembersProfiles : undefined} isGroupCreator={group.createdBy === user?.uid} />
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -611,8 +611,22 @@ export default function GroupDetailsPage({ params }: { params: Promise<{ id: str
 
                                 return (
                                     <div key={memberId} className="p-6 bg-gray-50/50 border border-gray-100 rounded-2xl hover:bg-white hover:shadow-md transition-all group">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <span className="text-lg font-black text-gray-900 italic">{getUserName(memberId)}</span>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <span className="text-lg font-black text-gray-900 italic">{getUserName(memberId)}</span>
+                                                {members[memberId]?.isDummy && group.createdBy === user.uid && (
+                                                    <button
+                                                        onClick={() => {
+                                                            const link = `${window.location.origin}/guest/${memberId}`;
+                                                            navigator.clipboard.writeText(link);
+                                                            showToast("Guest link copied! Send it to them.", "success");
+                                                        }}
+                                                        className="block text-[9px] mt-1 bg-teal-50 text-teal-600 px-2 py-1 rounded font-bold uppercase tracking-widest hover:bg-teal-100 transition-colors"
+                                                    >
+                                                        Copy Guest Link
+                                                    </button>
+                                                )}
+                                            </div>
                                             <span className={`text-xl font-black ${netBalance > 0 ? 'text-teal-600' : netBalance < 0 ? 'text-rose-500' : 'text-gray-400'}`}>
                                                 {netBalance > 0 ? '+' : ''}₹{Math.abs(netBalance).toLocaleString()}
                                             </span>
